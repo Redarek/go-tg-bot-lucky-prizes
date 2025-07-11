@@ -92,8 +92,9 @@ jobs:
             cd ~/tg-bot &&
             docker run --rm \
               -v $(pwd)/migrations:/migrations \
-              --network host migrate/migrate:latest \
+              # --network host   ← УБИРАЕМ эту опцию
+              migrate/migrate:latest \
               -path=/migrations \
-              -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \
+              -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \
               up
           '

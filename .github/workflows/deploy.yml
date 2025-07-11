@@ -51,7 +51,7 @@ jobs:
         run: |
           rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \
             docker-compose.yml migrations \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/my-bot/
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/tg-bot/
 
       - name: Create .env on server
         run: |

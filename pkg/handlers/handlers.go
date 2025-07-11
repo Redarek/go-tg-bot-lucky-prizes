@@ -98,7 +98,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 				tgbotapi.NewInlineKeyboardButtonData("✏️ Редактировать", fmt.Sprintf("edit_%d", id)),
 				tgbotapi.NewInlineKeyboardButtonData("🗑️ Удалить", fmt.Sprintf("del_%d", id)),
 			))
-		msg := tgbotapi.NewMessage(q.Message.Chat.ID, "Что сделать с пакетом?")
+		msg := tgbotapi.NewMessage(q.Message.Chat.ID, "Что сделать со стикерпаком?")
 		msg.ReplyMarkup = mk
 		h.bot.Send(msg)
 

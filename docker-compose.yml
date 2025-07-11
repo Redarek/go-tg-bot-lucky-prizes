@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   bot:
-    build: .
+    image: ghcr.io/redarek/go-tg-bot-lucky-prizes:latest
     container_name: telegram_bot
     restart: always
     depends_on:

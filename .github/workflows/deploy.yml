@@ -88,12 +88,14 @@ jobs:
 
       - name: Run DB migrations
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
-            cd ~/tg-bot &&
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            cd ~/tg-bot && \
+            docker compose up -d db && \
             docker run --rm \
-              -v $(pwd)/migrations:/migrations \
+              --network tg-bot_default \
+              -v \$(pwd)/migrations:/migrations \
               migrate/migrate:latest \
               -path=/migrations \
-              -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \
+              -database 'postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable' \
               up
-          '
+          "

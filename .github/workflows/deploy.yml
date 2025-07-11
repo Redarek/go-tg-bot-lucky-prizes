@@ -13,8 +13,10 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Compute image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -38,22 +40,40 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: production
+
     steps:
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Copy compose files
+      - name: Sync project files
         run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
-            docker-compose.yml .env ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/home/${{ secrets.SSH_USER }}/my-bot/
+          rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \
+            docker-compose.yml migrations \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/my-bot/
 
-      - name: Pull new image & restart
+      - name: Create .env on server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} <<'EOF'
+            cat > ~/my-bot/.env <<EOT
+            TELEGRAM_APITOKEN=${{ secrets.TELEGRAM_APITOKEN }}
+            ADMIN_ID=${{ secrets.ADMIN_ID }}
+            SHOP_URL=${{ secrets.SHOP_URL }}
+            SUB_CHANNEL=${{ secrets.SUB_CHANNEL }}
+            
+            POSTGRES_HOST=db
+            POSTGRES_PORT=5432
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+            EOT
+            EOF
+
+      - name: Pull image & restart bot
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
             cd ~/my-bot &&
-            export TAG=${{ needs.build-and-push.outputs.tag }} &&
             docker compose pull bot &&
             docker compose up -d --no-deps bot
           "
@@ -62,7 +82,8 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
             cd ~/my-bot &&
-            docker run --rm -v $(pwd)/migrations:/migrations \
+            docker run --rm \
+              -v $(pwd)/migrations:/migrations \
               --network host migrate/migrate:latest \
               -path=/migrations \
               -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \

@@ -72,22 +72,22 @@ jobs:
             EOT
             EOF
 
-- name: Pull image & restart bot
-  run: |
-    ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
-      cd ~/tg-bot &&
-      docker compose pull bot &&
-      docker compose up -d --no-deps bot
-    "
+      - name: Pull image & restart bot
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            cd ~/tg-bot &&
+            docker compose pull bot &&
+            docker compose up -d --no-deps bot
+          "
 
-- name: Run DB migrations
-  run: |
-    ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
-      cd ~/tg-bot &&
-      docker run --rm \
-        -v $(pwd)/migrations:/migrations \
-        --network host migrate/migrate:latest \
-        -path=/migrations \
-        -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \
-        up
-    '
+      - name: Run DB migrations
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            cd ~/tg-bot &&
+            docker run --rm \
+              -v $(pwd)/migrations:/migrations \
+              --network host migrate/migrate:latest \
+              -path=/migrations \
+              -database "postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/${{ secrets.POSTGRES_DB }}?sslmode=disable" \
+              up
+          '

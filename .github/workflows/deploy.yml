@@ -47,6 +47,11 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
+      - name: Show workspace tree
+        run: |
+          echo "Workspace: $GITHUB_WORKSPACE"
+          ls -R
+
       - name: Sync project files
         run: |
           rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \

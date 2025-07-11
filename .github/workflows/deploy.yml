@@ -55,6 +55,7 @@ jobs:
       - name: Sync project files
         working-directory: ${{ github.workspace }}
         run: |
+          ls -al
           rsync -az --delete -e "ssh -o StrictHostKeyChecking=no" \
             docker-compose.yml migrations \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/tg-bot/

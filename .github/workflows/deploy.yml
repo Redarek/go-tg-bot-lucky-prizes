@@ -72,10 +72,16 @@ jobs:
             EOT
             EOF
 
+      - name: Login to GHCR on server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "echo ${{ secrets.CR_PAT }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+
       - name: Pull image & restart bot
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
             cd ~/tg-bot &&
+            export TAG=${{ needs.build-and-push.outputs.tag }} &&
             docker compose pull bot &&
             docker compose up -d --no-deps bot
           "

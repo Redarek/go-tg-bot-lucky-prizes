@@ -1,9 +1,10 @@
 package models
 
 type StickerPack struct {
-	ID   int
-	Name string
-	URL  string
+	ID      int
+	Name    string
+	URL     string
+	Deleted bool
 }
 
 type UserClaim struct {

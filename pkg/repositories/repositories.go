@@ -36,9 +36,15 @@ func (r *Repository) DeleteStickerPack(ctx context.Context, id int) error {
 	return err
 }
 
+func (r *Repository) SoftDeleteStickerPack(ctx context.Context, id int) error {
+	_, err := r.DB.Exec(ctx,
+		`UPDATE sticker_packs SET deleted = TRUE WHERE id=$1`, id)
+	return err
+}
+
 func (r *Repository) GetStickerPacks(ctx context.Context) ([]models.StickerPack, error) {
 	rows, err := r.DB.Query(ctx,
-		`SELECT id, name, url FROM sticker_packs ORDER BY id`)
+		`SELECT id, name, url FROM sticker_packs WHERE deleted = FALSE ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +64,7 @@ func (r *Repository) GetStickerPacks(ctx context.Context) ([]models.StickerPack,
 func (r *Repository) GetRandomStickerPack(ctx context.Context) (models.StickerPack, error) {
 	var p models.StickerPack
 	err := r.DB.QueryRow(ctx,
-		`SELECT id, name, url FROM sticker_packs ORDER BY RANDOM() LIMIT 1`).
+		`SELECT id, name, url FROM sticker_packs WHERE deleted = FALSE ORDER BY RANDOM() LIMIT 1`).
 		Scan(&p.ID, &p.Name, &p.URL)
 
 	if errors.Is(err, pgx.ErrNoRows) {

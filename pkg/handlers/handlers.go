@@ -108,7 +108,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 
 	case strings.HasPrefix(q.Data, "delok_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "delok_"))
-		if err := h.service.Repo.DeleteStickerPack(ctx, id); err != nil {
+		if err := h.service.Repo.SoftDeleteStickerPack(ctx, id); err != nil {
 			h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
 				"Ошибка удаления: "+err.Error()))
 		} else {

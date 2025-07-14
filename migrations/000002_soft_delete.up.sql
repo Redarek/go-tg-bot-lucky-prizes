@@ -1,0 +1,2 @@
+ALTER TABLE sticker_packs
+    ADD COLUMN deleted BOOLEAN NOT NULL DEFAULT FALSE;

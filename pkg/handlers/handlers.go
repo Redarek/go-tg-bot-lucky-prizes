@@ -246,7 +246,14 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 				"⚠️ Стикерпаков пока нет. Попробуйте позже."))
 			return
 		}
-		h.bot.Send(tgbotapi.NewMessage(chatID, err.Error()))
+		mk := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Получить все стикерпаки", h.shopURL),
+			))
+
+		msg := tgbotapi.NewMessage(chatID, err.Error())
+		msg.ReplyMarkup = mk
+		h.bot.Send(msg)
 		return
 	}
 

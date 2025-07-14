@@ -4,8 +4,7 @@ CREATE TABLE IF NOT EXISTS sticker_packs (
                                              url TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS user_claims (
-                                           user_id BIGINT PRIMARY KEY,
-                                           sticker_pack_id INT REFERENCES sticker_packs(id)
+                                           user_id BIGINT PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS admin_states (
                                             user_id BIGINT PRIMARY KEY,

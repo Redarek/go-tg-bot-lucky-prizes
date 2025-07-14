@@ -28,7 +28,7 @@ func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (
 	}
 
 	if userID != adminID {
-		err = s.Repo.MarkUserClaimed(ctx, userID, pack.ID)
+		err = s.Repo.MarkUserClaimed(ctx, userID)
 	}
 	return pack, err
 }

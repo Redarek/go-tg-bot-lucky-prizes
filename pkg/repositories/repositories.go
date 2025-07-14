@@ -36,12 +36,6 @@ func (r *Repository) DeleteStickerPack(ctx context.Context, id int) error {
 	return err
 }
 
-func (r *Repository) SoftDeleteStickerPack(ctx context.Context, id int) error {
-	_, err := r.DB.Exec(ctx,
-		`UPDATE sticker_packs SET deleted = TRUE WHERE id=$1`, id)
-	return err
-}
-
 func (r *Repository) GetStickerPacks(ctx context.Context) ([]models.StickerPack, error) {
 	rows, err := r.DB.Query(ctx,
 		`SELECT id, name, url FROM sticker_packs WHERE deleted = FALSE ORDER BY id`)
@@ -81,10 +75,10 @@ func (r *Repository) HasUserClaimed(ctx context.Context, userID int64) bool {
 	return exists
 }
 
-func (r *Repository) MarkUserClaimed(ctx context.Context, userID int64, packID int) error {
+func (r *Repository) MarkUserClaimed(ctx context.Context, userID int64) error {
 	_, err := r.DB.Exec(ctx,
-		`INSERT INTO user_claims (user_id, sticker_pack_id) VALUES ($1,$2)`,
-		userID, packID)
+		`INSERT INTO user_claims (user_id) VALUES ($1)`,
+		userID)
 	return err
 }
 

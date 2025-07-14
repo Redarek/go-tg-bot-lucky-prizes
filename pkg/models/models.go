@@ -8,8 +8,7 @@ type StickerPack struct {
 }
 
 type UserClaim struct {
-	UserID        int64
-	StickerPackID int
+	UserID int64
 }
 
 type AdminState struct {

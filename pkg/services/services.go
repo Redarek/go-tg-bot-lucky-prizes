@@ -27,6 +27,8 @@ func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (
 		return models.StickerPack{}, err
 	}
 
-	err = s.Repo.MarkUserClaimed(ctx, userID, pack.ID)
+	if userID != adminID {
+		err = s.Repo.MarkUserClaimed(ctx, userID, pack.ID)
+	}
 	return pack, err
 }

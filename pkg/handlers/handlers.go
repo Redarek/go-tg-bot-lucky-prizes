@@ -78,18 +78,11 @@ func (h *Handler) sendStartMessage(chatID int64) {
 
 func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery) {
 	switch {
+	case q.Data == "start":
+		h.sendStartMessage(q.Message.Chat.ID)
+
 	case q.Data == "draw":
-		if !h.subscribed(q.From.ID) {
-			h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
-				"Сначала подпишитесь на канал "+h.subChannelID))
-			return
-		}
-		p, err := h.service.ClaimStickerPack(ctx, q.From.ID)
-		txt := "Ваш стикерпак: " + p.URL
-		if err != nil {
-			txt = err.Error()
-		}
-		h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID, txt))
+		h.processDraw(ctx, q.Message.Chat.ID, q.Message.From.ID)
 
 	case strings.HasPrefix(q.Data, "pack_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "pack_"))
@@ -146,6 +139,7 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 		})
 		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID,
 			"Отправьте НАЗВАНИЕ нового стикерпака:"))
+
 	case "draw":
 		h.processDraw(ctx, m.Chat.ID, m.From.ID)
 	}
@@ -245,12 +239,6 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		return
 	}
 
-	dice := tgbotapi.NewDice(chatID)
-	dice.Emoji = "🎰" // есть ещё 🎲 ⚽ 🏀 🎳 🎯
-	msg, _ := h.bot.Send(dice)
-
-	time.Sleep(2 * time.Second)
-
 	p, err := h.service.ClaimStickerPack(ctx, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Список стикерпаков пуст") {
@@ -261,6 +249,12 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		h.bot.Send(tgbotapi.NewMessage(chatID, err.Error()))
 		return
 	}
+
+	dice := tgbotapi.NewDice(chatID)
+	dice.Emoji = "🎲" // есть ещё 🎲 ⚽ 🏀 🎳 🎯🎰
+	msg, _ := h.bot.Send(dice)
+
+	time.Sleep(2 * time.Second)
 
 	text := "Ваш стикерпак: " + p.URL
 

@@ -239,7 +239,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		return
 	}
 
-	p, err := h.service.ClaimStickerPack(ctx, userID)
+	p, err := h.service.ClaimStickerPack(ctx, userID, h.adminID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Список стикерпаков пуст") {
 			h.bot.Send(tgbotapi.NewMessage(chatID,

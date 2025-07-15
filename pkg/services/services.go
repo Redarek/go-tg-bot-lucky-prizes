@@ -20,6 +20,12 @@ func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (
 		if s.Repo.HasUserClaimed(ctx, userID) {
 			return models.StickerPack{}, errors.New("Вы уже получили стикерпак")
 		}
+
+		err := s.Repo.MarkUserClaimed(ctx, userID)
+		if err != nil {
+			return models.StickerPack{}, err
+		}
+
 	}
 
 	pack, err := s.Repo.GetRandomStickerPack(ctx)
@@ -27,8 +33,5 @@ func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (
 		return models.StickerPack{}, err
 	}
 
-	if userID != adminID {
-		err = s.Repo.MarkUserClaimed(ctx, userID)
-	}
 	return pack, err
 }

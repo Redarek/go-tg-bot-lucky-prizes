@@ -91,7 +91,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 		h.sendStartMessage(q.Message.Chat.ID)
 
 	case q.Data == "draw":
-		h.processDraw(ctx, q.Message.Chat.ID, q.Message.From.ID)
+		h.processDraw(ctx, q.Message.Chat.ID, q.From.ID)
 
 	case strings.HasPrefix(q.Data, "pack_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "pack_"))

@@ -28,7 +28,6 @@ func main() {
 
 	pub := tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
-		tgbotapi.BotCommand{Command: "draw", Description: "Разыграть стикерпак"},
 	)
 	publicScope := tgbotapi.NewBotCommandScopeDefault()
 	pub.Scope = &publicScope
@@ -36,7 +35,6 @@ func main() {
 
 	admin := tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
-		tgbotapi.BotCommand{Command: "draw", Description: "Разыграть стикерпак"},
 		tgbotapi.BotCommand{Command: "packs", Description: "Список стикерпаков"},
 		tgbotapi.BotCommand{Command: "addpack", Description: "Добавить стикерпак"},
 	)

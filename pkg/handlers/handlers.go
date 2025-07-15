@@ -55,6 +55,13 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 			return
 		}
 
+		if upd.Message.IsCommand() &&
+			upd.Message.From.ID != h.adminID &&
+			upd.Message.Command() == "start" {
+			h.sendStartMessage(upd.Message.Chat.ID)
+			return
+		}
+
 		h.handleAdminDialog(ctx, upd.Message)
 		return
 	}

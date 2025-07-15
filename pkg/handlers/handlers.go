@@ -21,7 +21,7 @@ type Handler struct {
 	service        *services.Service
 	adminID        int64
 	shopURL        string
-	subChannelID   string
+	subChannelID   int64
 	subChannelLink string
 }
 
@@ -215,10 +215,15 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 }
 
 func (h *Handler) subscribed(userID int64) bool {
+	// если ID не задан — проверка выключена
+	if h.subChannelID == 0 {
+		return true
+	}
 
-	cfg := tgbotapi.ChatConfigWithUser{UserID: userID}
-
-	cfg.SuperGroupUsername = strings.TrimPrefix(h.subChannelID, "@")
+	cfg := tgbotapi.ChatConfigWithUser{
+		ChatID: h.subChannelID,
+		UserID: userID,
+	}
 
 	member, err := h.bot.GetChatMember(tgbotapi.GetChatMemberConfig{ChatConfigWithUser: cfg})
 	if err != nil {

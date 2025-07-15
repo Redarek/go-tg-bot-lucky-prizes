@@ -57,7 +57,7 @@ func main() {
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Println("Bot started. Ctrl-C to stop.")
+	log.Println("Bot started")
 	for {
 		select {
 		case <-ctx.Done():

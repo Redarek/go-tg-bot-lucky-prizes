@@ -12,7 +12,7 @@ type Config struct {
 	TelegramToken  string
 	AdminID        int64
 	ShopURL        string
-	SubChannelID   string
+	SubChannelID   int64
 	SubChannelLink string
 
 	PostgresHost     string
@@ -33,11 +33,16 @@ func LoadConfig() *Config {
 		log.Fatal("Ошибка при чтении ADMIN_ID: ", err)
 	}
 
+	subChannelID, err := strconv.ParseInt(os.Getenv("SUB_CHANNEL_ID"), 10, 64)
+	if err != nil {
+		log.Fatal("SUB_CHANNEL_ID должен быть числом (-100…): ", err)
+	}
+
 	return &Config{
 		TelegramToken:  os.Getenv("TELEGRAM_APITOKEN"),
 		AdminID:        adminID,
 		ShopURL:        os.Getenv("SHOP_URL"),
-		SubChannelID:   os.Getenv("SUB_CHANNEL_ID"),
+		SubChannelID:   subChannelID,
 		SubChannelLink: os.Getenv("SUB_CHANNEL_LINK"),
 
 		PostgresHost:     os.Getenv("POSTGRES_HOST"),

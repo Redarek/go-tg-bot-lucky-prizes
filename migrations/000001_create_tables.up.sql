@@ -11,3 +11,8 @@ CREATE TABLE IF NOT EXISTS admin_states (
                                             state TEXT NOT NULL,
                                             data TEXT
 );
+
+CREATE TABLE bot_users (
+                           user_id BIGINT PRIMARY KEY,
+                           created_at TIMESTAMPTZ DEFAULT now()
+);

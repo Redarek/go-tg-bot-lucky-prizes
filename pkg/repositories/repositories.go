@@ -108,3 +108,10 @@ func (r *Repository) ClearAdminState(ctx context.Context, userID int64) error {
 	_, err := r.DB.Exec(ctx, `DELETE FROM admin_states WHERE user_id=$1`, userID)
 	return err
 }
+
+func (r *Repository) UpsertBotUser(ctx context.Context, userID int64) error {
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO bot_users (user_id) VALUES ($1)
+         ON CONFLICT (user_id) DO NOTHING`, userID)
+	return err
+}

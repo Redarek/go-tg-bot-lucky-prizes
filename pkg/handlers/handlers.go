@@ -72,6 +72,8 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 }
 
 func (h *Handler) sendStartMessage(chatID int64) {
+	h.service.Repo.UpsertBotUser(context.Background(), chatID)
+
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
@@ -213,17 +215,10 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 }
 
 func (h *Handler) subscribed(userID int64) bool {
-	if h.subChannelID == "" {
-		return true
-	}
 
 	cfg := tgbotapi.ChatConfigWithUser{UserID: userID}
 
-	if id, err := strconv.ParseInt(h.subChannelID, 10, 64); err == nil {
-		cfg.ChatID = id
-	} else {
-		cfg.SuperGroupUsername = strings.TrimPrefix(h.subChannelID, "@")
-	}
+	cfg.SuperGroupUsername = strings.TrimPrefix(h.subChannelID, "@")
 
 	member, err := h.bot.GetChatMember(tgbotapi.GetChatMemberConfig{ChatConfigWithUser: cfg})
 	if err != nil {

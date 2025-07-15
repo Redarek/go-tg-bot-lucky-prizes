@@ -77,10 +77,10 @@ func (h *Handler) sendStartMessage(chatID int64) {
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
-			tgbotapi.NewInlineKeyboardButtonURL("Получить все", h.shopURL),
+			tgbotapi.NewInlineKeyboardButtonURL("Получить все стикерпаки", h.shopURL),
 		))
 
-	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выбери действие:")
+	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выберите действие:")
 	msg.ReplyMarkup = mk
 	h.bot.Send(msg)
 }
@@ -130,7 +130,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 			UserID: q.From.ID, State: "edit_wait_name", Data: id,
 		})
 		h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
-			"Отправьте новое НАЗВАНИЕ:"))
+			"Отправьте новое название:"))
 	}
 }
 
@@ -147,7 +147,7 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 			UserID: m.From.ID, State: "add_wait_name",
 		})
 		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID,
-			"Отправьте НАЗВАНИЕ нового стикерпака:"))
+			"Отправьте название нового стикерпака:"))
 
 	case "draw":
 		h.processDraw(ctx, m.Chat.ID, m.From.ID)
@@ -215,7 +215,6 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 }
 
 func (h *Handler) subscribed(userID int64) bool {
-	// если ID не задан — проверка выключена
 	if h.subChannelID == 0 {
 		return true
 	}
@@ -242,7 +241,7 @@ func (h *Handler) subscribed(userID int64) bool {
 func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	if !h.subscribed(userID) {
 		h.bot.Send(tgbotapi.NewMessage(chatID,
-			"Сначала подпишитесь на канал "+h.subChannelLink))
+			"Нужно подписаться на канал "+h.subChannelLink))
 		return
 	}
 

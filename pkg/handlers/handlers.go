@@ -77,10 +77,9 @@ func (h *Handler) sendStartMessage(chatID int64) {
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
-			tgbotapi.NewInlineKeyboardButtonURL("Получить все стикерпаки", h.shopURL),
 		))
 
-	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выберите действие:")
+	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выберите действие, чтобы получить случайный стикерпак:")
 	msg.ReplyMarkup = mk
 	h.bot.Send(msg)
 }

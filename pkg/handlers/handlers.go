@@ -2,19 +2,22 @@ package handlers
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
-	"log"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/config"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/models"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/repositories"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/services"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"log"
+	"strconv"
+	"strings"
+	"time"
 )
+
+//go:embed assets/start.jpeg
+var StartJPG []byte
 
 type Handler struct {
 	bot            *tgbotapi.BotAPI
@@ -71,6 +74,19 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 	}
 }
 
+//func (h *Handler) sendStartMessage(chatID int64) {
+//	h.service.Repo.UpsertBotUser(context.Background(), chatID)
+//
+//	mk := tgbotapi.NewInlineKeyboardMarkup(
+//		tgbotapi.NewInlineKeyboardRow(
+//			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
+//		))
+//
+//	msg := tgbotapi.NewMessage(chatID, "🎲Готов испытать свою удачу? 🎲\nЗапускай Колесо Фортуны и забирай один из фирменных ультра-брутальных стикерпаков TWILIGHT HAMMER!\n🥇 Крути колесо, боец! Забери свой трофей!")
+//	msg.ReplyMarkup = mk
+//	h.bot.Send(msg)
+//}
+
 func (h *Handler) sendStartMessage(chatID int64) {
 	h.service.Repo.UpsertBotUser(context.Background(), chatID)
 
@@ -79,9 +95,21 @@ func (h *Handler) sendStartMessage(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
 		))
 
-	msg := tgbotapi.NewMessage(chatID, "Добро пожаловать! Выберите действие, чтобы получить случайный стикерпак:")
-	msg.ReplyMarkup = mk
-	h.bot.Send(msg)
+	caption := "🎲<b><u>Готов испытать свою удачу?</u></b> 🎲\n" +
+		"Запускай Колесо Фортуны и забирай один из <i>фирменных ультра-брутальных стикерпаков</i> <b>TWILIGHT HAMMER!</b>\n" +
+		"🥇<i>Крути колесо, боец! Забери свой трофей!</i>"
+
+	photo := tgbotapi.NewPhoto(chatID, tgbotapi.FileBytes{
+		Name:  "start.jpg",
+		Bytes: StartJPG,
+	})
+	photo.Caption = caption
+	photo.ReplyMarkup = mk
+	photo.ParseMode = "HTML"
+
+	if _, err := h.bot.Send(photo); err != nil {
+		_ = err
+	}
 }
 
 func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery) {
@@ -253,7 +281,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		}
 		mk := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonURL("Получить все стикерпаки", h.shopURL),
+				tgbotapi.NewInlineKeyboardButtonURL("Заказать броню", h.shopURL),
 			))
 
 		msg := tgbotapi.NewMessage(chatID, err.Error())
@@ -268,10 +296,20 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	time.Sleep(2 * time.Second)
 
-	text := "Ваш стикерпак: " + p.URL
+	text := "🎰<b>НИШТЯК!</b> Ты залутал крутой стикерпак !😎\n" +
+		"Теперь у тебя в руках оружие для чатов — <i>бей словами, жги эмоциями, взрывай переписки!</i>\n" + p.URL
 
 	res := tgbotapi.NewMessage(chatID, text)
 	res.ReplyToMessageID = msg.MessageID
-
 	h.bot.Send(res)
+
+	time.Sleep(1 * time.Second)
+	textAfterDraw := "⚡️<u>Попытка была одна — и Фортуна уже выбрала стикерпак под твой стиль!</u>\n" +
+		"Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n" +
+		"<b>Заказать можешь тут:</b>\n" +
+		"🛡<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
+		"🛡<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>"
+	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)
+	resAfterDraw.ReplyToMessageID = msg.MessageID
+	h.bot.Send(resAfterDraw)
 }

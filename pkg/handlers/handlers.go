@@ -105,7 +105,7 @@ func (h *Handler) sendStartMessage(chatID int64) {
 	})
 	photo.Caption = caption
 	photo.ReplyMarkup = mk
-	photo.ParseMode = "HTML"
+	photo.ParseMode = tgbotapi.ModeHTML
 
 	if _, err := h.bot.Send(photo); err != nil {
 		_ = err
@@ -285,6 +285,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 			))
 
 		msg := tgbotapi.NewMessage(chatID, err.Error())
+		msg.ParseMode = tgbotapi.ModeHTML
 		msg.ReplyMarkup = mk
 		h.bot.Send(msg)
 		return
@@ -300,6 +301,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		"Теперь у тебя в руках оружие для чатов — <i>бей словами, жги эмоциями, взрывай переписки!</i>\n" + p.URL
 
 	res := tgbotapi.NewMessage(chatID, text)
+	res.ParseMode = tgbotapi.ModeHTML
 	res.ReplyToMessageID = msg.MessageID
 	h.bot.Send(res)
 
@@ -310,6 +312,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		"🛡<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
 		"🛡<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>"
 	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)
+	resAfterDraw.ParseMode = tgbotapi.ModeHTML
 	resAfterDraw.ReplyToMessageID = msg.MessageID
 	h.bot.Send(resAfterDraw)
 }

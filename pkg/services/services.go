@@ -29,7 +29,6 @@ func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (
 		if err != nil {
 			return models.StickerPack{}, err
 		}
-
 	}
 
 	pack, err := s.Repo.GetRandomStickerPack(ctx)

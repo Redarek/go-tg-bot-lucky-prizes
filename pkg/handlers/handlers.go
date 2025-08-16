@@ -92,7 +92,7 @@ func (h *Handler) sendStartMessage(chatID int64) {
 
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
+			tgbotapi.NewInlineKeyboardButtonData("Получить стикерпак", "draw"),
 		))
 
 	caption := "🎯<b><u>Готов испытать свою удачу?</u></b>\n" +

@@ -293,7 +293,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	dice := tgbotapi.NewDice(chatID)
 	dice.Emoji = "🎲" // есть ещё 🎲 ⚽ 🏀 🎳 🎯🎰
-	msg, _ := h.bot.Send(dice)
+	h.bot.Send(dice)
 
 	time.Sleep(2 * time.Second)
 
@@ -302,17 +302,17 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	res := tgbotapi.NewMessage(chatID, text)
 	res.ParseMode = tgbotapi.ModeHTML
-	res.ReplyToMessageID = msg.MessageID
+	//res.ReplyToMessageID = msg.MessageID
 	h.bot.Send(res)
 
 	time.Sleep(1 * time.Second)
 	textAfterDraw := "⚡️<u>Попытка была одна — и Фортуна уже выбрала стикерпак под твой стиль!</u>\n" +
-		"Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n" +
-		"<b>Заказать можешь тут:</b>\n" +
-		"🛡<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
-		"🛡<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>"
+		"🔄Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n" +
+		"Заказать можешь тут :\n" +
+		"🟣<a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a>\n" +
+		"🔵<a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a>"
 	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)
 	resAfterDraw.ParseMode = tgbotapi.ModeHTML
-	resAfterDraw.ReplyToMessageID = msg.MessageID
+	//resAfterDraw.ReplyToMessageID = msg.MessageID
 	h.bot.Send(resAfterDraw)
 }

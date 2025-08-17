@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var ErrNoPacks = errors.New("no_packs")
+
 func init() { rand.Seed(time.Now().UnixNano()) }
 
 type Repository struct {
@@ -20,14 +22,12 @@ type Repository struct {
 func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{DB: db} }
 
 func (r *Repository) CreateStickerPack(ctx context.Context, name, url string) error {
-	_, err := r.DB.Exec(ctx,
-		`INSERT INTO sticker_packs (name, url) VALUES ($1, $2)`, name, url)
+	_, err := r.DB.Exec(ctx, `INSERT INTO sticker_packs (name, url) VALUES ($1, $2)`, name, url)
 	return err
 }
 
 func (r *Repository) UpdateStickerPack(ctx context.Context, id int, name, url string) error {
-	_, err := r.DB.Exec(ctx,
-		`UPDATE sticker_packs SET name=$1, url=$2 WHERE id=$3`, name, url, id)
+	_, err := r.DB.Exec(ctx, `UPDATE sticker_packs SET name=$1, url=$2 WHERE id=$3`, name, url, id)
 	return err
 }
 
@@ -37,8 +37,7 @@ func (r *Repository) DeleteStickerPack(ctx context.Context, id int) error {
 }
 
 func (r *Repository) GetStickerPacks(ctx context.Context) ([]models.StickerPack, error) {
-	rows, err := r.DB.Query(ctx,
-		`SELECT id, name, url FROM sticker_packs ORDER BY id`)
+	rows, err := r.DB.Query(ctx, `SELECT id, name, url FROM sticker_packs ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +66,18 @@ func (r *Repository) GetRandomStickerPack(ctx context.Context) (models.StickerPa
 	return p, err
 }
 
+// Атомарная попытка получить право на стикерпак 1 раз на user_id
+func (r *Repository) TryClaim(ctx context.Context, userID int64) (bool, error) {
+	ct, err := r.DB.Exec(ctx, `
+		INSERT INTO user_claims (user_id) VALUES ($1)
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() == 1, nil
+}
+
 func (r *Repository) HasUserClaimed(ctx context.Context, userID int64) bool {
 	var exists bool
 	_ = r.DB.QueryRow(ctx,
@@ -86,16 +97,14 @@ func (r *Repository) SetAdminState(ctx context.Context, st models.AdminState) er
 	_, err := r.DB.Exec(ctx, `
 		INSERT INTO admin_states (user_id, state, data)
 		VALUES ($1,$2,$3)
-		ON CONFLICT (user_id)
-		DO UPDATE SET state=$2, data=$3`,
+		ON CONFLICT (user_id) DO UPDATE SET state=$2, data=$3`,
 		st.UserID, st.State, st.Data)
 	return err
 }
 
 func (r *Repository) GetAdminState(ctx context.Context, userID int64) (models.AdminState, error) {
 	var st models.AdminState
-	err := r.DB.QueryRow(ctx,
-		`SELECT user_id, state, data FROM admin_states WHERE user_id=$1`,
+	err := r.DB.QueryRow(ctx, `SELECT user_id, state, data FROM admin_states WHERE user_id=$1`,
 		userID).Scan(&st.UserID, &st.State, &st.Data)
 
 	if errors.Is(err, pgx.ErrNoRows) {

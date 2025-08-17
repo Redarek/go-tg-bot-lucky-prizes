@@ -298,7 +298,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		))
 	textAfterDraw := "⚡️<u>Попытка была одна — и Фортуна уже выбрала стикерпак под твой стиль!</u>\n" +
 		"🔄Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n" +
-		"<b>Заказать можешь тут:<b>\n" +
+		"<b>Заказать можешь тут:</b>\n" +
 		"🟣<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
 		"🔵<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>"
 	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)

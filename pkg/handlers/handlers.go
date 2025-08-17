@@ -75,7 +75,11 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 }
 
 func (h *Handler) sendStartMessage(chatID int64) {
-	h.service.Repo.UpsertBotUser(context.Background(), chatID)
+	err := h.service.Repo.UpsertBotUser(context.Background(), chatID)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -116,7 +120,11 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 			))
 		msg := tgbotapi.NewMessage(q.Message.Chat.ID, "Что сделать со стикерпаком?")
 		msg.ReplyMarkup = mk
-		h.bot.Send(msg)
+		_, err := h.bot.Send(msg)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case strings.HasPrefix(q.Data, "del_"):
 		id := strings.TrimPrefix(q.Data, "del_")
@@ -127,15 +135,27 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 
 		msg := tgbotapi.NewMessage(q.Message.Chat.ID, "Точно удалить?")
 		msg.ReplyMarkup = mk
-		h.bot.Send(msg)
+		_, err := h.bot.Send(msg)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case strings.HasPrefix(q.Data, "delok_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "delok_"))
 		if err := h.service.Repo.DeleteStickerPack(ctx, id); err != nil {
-			h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
+			_, err = h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
 				"Ошибка удаления: "+err.Error()))
+			if err != nil {
+				log.Println(err)
+				return
+			}
 		} else {
-			h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID, "✅ Удалено"))
+			_, err = h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID, "✅ Удалено"))
+			if err != nil {
+				log.Println(err)
+				return
+			}
 		}
 
 	case strings.HasPrefix(q.Data, "edit_"):
@@ -143,8 +163,12 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 		_ = h.service.Repo.SetAdminState(ctx, models.AdminState{
 			UserID: q.From.ID, State: "edit_wait_name", Data: id,
 		})
-		h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
+		_, err := h.bot.Send(tgbotapi.NewMessage(q.Message.Chat.ID,
 			"Отправьте новое название:"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 }
 
@@ -160,8 +184,12 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 		_ = h.service.Repo.SetAdminState(ctx, models.AdminState{
 			UserID: m.From.ID, State: "add_wait_name",
 		})
-		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID,
+		_, err := h.bot.Send(tgbotapi.NewMessage(m.Chat.ID,
 			"Отправьте название нового стикерпака:"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case "draw":
 		h.processDraw(ctx, m.Chat.ID, m.From.ID)
@@ -171,7 +199,11 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 func (h *Handler) showPacksList(ctx context.Context, chatID int64) {
 	packs, _ := h.service.Repo.GetStickerPacks(ctx)
 	if len(packs) == 0 {
-		h.bot.Send(tgbotapi.NewMessage(chatID, "Стикерпаков не добавлено"))
+		_, err := h.bot.Send(tgbotapi.NewMessage(chatID, "Стикерпаков не добавлено"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 		return
 	}
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -184,7 +216,11 @@ func (h *Handler) showPacksList(ctx context.Context, chatID int64) {
 	mk := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	msg := tgbotapi.NewMessage(chatID, "Выберите стикерпак:")
 	msg.ReplyMarkup = mk
-	h.bot.Send(msg)
+	_, err := h.bot.Send(msg)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 }
 
 func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
@@ -196,15 +232,31 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 		_ = h.service.Repo.SetAdminState(ctx, models.AdminState{
 			UserID: m.From.ID, State: "add_wait_url", Data: m.Text,
 		})
-		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Теперь отправьте ссылку:"))
+		_, err := h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Теперь отправьте ссылку:"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case "add_wait_url":
 		if err := h.service.Repo.CreateStickerPack(ctx, st.Data, m.Text); err != nil {
-			h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Ошибка: "+err.Error()))
+			_, err = h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Ошибка: "+err.Error()))
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			return
 		}
-		h.service.Repo.ClearAdminState(ctx, m.From.ID)
-		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "✅ Стикерпак добавлен"))
+		err := h.service.Repo.ClearAdminState(ctx, m.From.ID)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		_, err = h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "✅ Стикерпак добавлен"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case "edit_wait_name":
 		_ = h.service.Repo.SetAdminState(ctx, models.AdminState{
@@ -212,7 +264,11 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 			State:  "edit_wait_url",
 			Data:   st.Data + "|" + m.Text,
 		})
-		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Теперь отправьте новую ссылку:"))
+		_, err := h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Теперь отправьте новую ссылку:"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 	case "edit_wait_url":
 		parts := strings.SplitN(st.Data, "|", 2)
@@ -220,11 +276,23 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 		newName := parts[1]
 		newURL := m.Text
 		if err := h.service.Repo.UpdateStickerPack(ctx, id, newName, newURL); err != nil {
-			h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Ошибка: "+err.Error()))
+			_, err = h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Ошибка: "+err.Error()))
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			return
 		}
-		h.service.Repo.ClearAdminState(ctx, m.From.ID)
-		h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "✅ Обновлено"))
+		err := h.service.Repo.ClearAdminState(ctx, m.From.ID)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		_, err = h.bot.Send(tgbotapi.NewMessage(m.Chat.ID, "✅ Обновлено"))
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 }
 
@@ -260,15 +328,23 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 			))
 		msg := tgbotapi.NewMessage(chatID, "Подпишись на канал "+h.subChannelLink+", чтобы получить стикерпак")
 		msg.ReplyMarkup = mk
-		h.bot.Send(msg)
+		_, err := h.bot.Send(msg)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 		return
 	}
 
 	p, err := h.service.ClaimStickerPack(ctx, userID, h.adminID)
 	if err != nil {
 		if strings.Contains(err.Error(), "Список стикерпаков пуст") {
-			h.bot.Send(tgbotapi.NewMessage(chatID,
+			_, err = h.bot.Send(tgbotapi.NewMessage(chatID,
 				"⚠️ Стикерпаков пока нет. Попробуйте позже."))
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			return
 		}
 		mk := tgbotapi.NewInlineKeyboardMarkup(
@@ -279,13 +355,21 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		msg := tgbotapi.NewMessage(chatID, err.Error())
 		msg.ParseMode = tgbotapi.ModeHTML
 		msg.ReplyMarkup = mk
-		h.bot.Send(msg)
+		_, err = h.bot.Send(msg)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 		return
 	}
 
 	dice := tgbotapi.NewDice(chatID)
 	dice.Emoji = "🎲" // есть ещё 🎲 ⚽ 🏀 🎳 🎯🎰
-	h.bot.Send(dice)
+	_, err = h.bot.Send(dice)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 
 	time.Sleep(2 * time.Second)
 
@@ -294,7 +378,11 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	res := tgbotapi.NewMessage(chatID, text)
 	res.ParseMode = tgbotapi.ModeHTML
-	h.bot.Send(res)
+	_, err = h.bot.Send(res)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 
 	time.Sleep(1 * time.Second)
 	mk := tgbotapi.NewInlineKeyboardMarkup(
@@ -309,5 +397,9 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)
 	resAfterDraw.ParseMode = tgbotapi.ModeHTML
 	resAfterDraw.ReplyMarkup = mk
-	h.bot.Send(resAfterDraw)
+	_, err = h.bot.Send(resAfterDraw)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 }

@@ -74,19 +74,6 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 	}
 }
 
-//func (h *Handler) sendStartMessage(chatID int64) {
-//	h.service.Repo.UpsertBotUser(context.Background(), chatID)
-//
-//	mk := tgbotapi.NewInlineKeyboardMarkup(
-//		tgbotapi.NewInlineKeyboardRow(
-//			tgbotapi.NewInlineKeyboardButtonData("Разыграть стикерпак", "draw"),
-//		))
-//
-//	msg := tgbotapi.NewMessage(chatID, "🎲Готов испытать свою удачу? 🎲\nЗапускай Колесо Фортуны и забирай один из фирменных ультра-брутальных стикерпаков TWILIGHT HAMMER!\n🥇 Крути колесо, боец! Забери свой трофей!")
-//	msg.ReplyMarkup = mk
-//	h.bot.Send(msg)
-//}
-
 func (h *Handler) sendStartMessage(chatID int64) {
 	h.service.Repo.UpsertBotUser(context.Background(), chatID)
 
@@ -184,7 +171,7 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 func (h *Handler) showPacksList(ctx context.Context, chatID int64) {
 	packs, _ := h.service.Repo.GetStickerPacks(ctx)
 	if len(packs) == 0 {
-		h.bot.Send(tgbotapi.NewMessage(chatID, "Стикерпаков нет"))
+		h.bot.Send(tgbotapi.NewMessage(chatID, "Стикерпаков не добавлено"))
 		return
 	}
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -297,22 +284,25 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	time.Sleep(2 * time.Second)
 
-	text := "😎<b>НИШТЯК!</b> Ты залутал крутой стикерпак !\n" +
+	text := "😎<b>НИШТЯК!</b> Ты залутал крутой стикерпак!\n" +
 		"⚔️Теперь у тебя в руках оружие для чатов — <i>бей словами, жги эмоциями, взрывай переписки!</i>\n" + p.URL
 
 	res := tgbotapi.NewMessage(chatID, text)
 	res.ParseMode = tgbotapi.ModeHTML
-	//res.ReplyToMessageID = msg.MessageID
 	h.bot.Send(res)
 
 	time.Sleep(1 * time.Second)
+	mk := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Заказать броню", h.shopURL),
+		))
 	textAfterDraw := "⚡️<u>Попытка была одна — и Фортуна уже выбрала стикерпак под твой стиль!</u>\n" +
 		"🔄Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n" +
-		"Заказать можешь тут :\n" +
-		"🟣<a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a>\n" +
-		"🔵<a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a>"
+		"<b>Заказать можешь тут:<b>\n" +
+		"🟣<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
+		"🔵<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>"
 	resAfterDraw := tgbotapi.NewMessage(chatID, textAfterDraw)
 	resAfterDraw.ParseMode = tgbotapi.ModeHTML
-	//resAfterDraw.ReplyToMessageID = msg.MessageID
+	resAfterDraw.ReplyMarkup = mk
 	h.bot.Send(resAfterDraw)
 }

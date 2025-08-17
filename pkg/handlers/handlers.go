@@ -308,7 +308,7 @@ func (h *Handler) subscribed(userID int64) bool {
 
 	member, err := h.bot.GetChatMember(tgbotapi.GetChatMemberConfig{ChatConfigWithUser: cfg})
 	if err != nil {
-		log.Println("GetChatMember:", err)
+		log.Println(err)
 		return false
 	}
 

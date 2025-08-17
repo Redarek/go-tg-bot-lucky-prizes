@@ -254,8 +254,13 @@ func (h *Handler) subscribed(userID int64) bool {
 
 func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	if !h.subscribed(userID) {
-		h.bot.Send(tgbotapi.NewMessage(chatID,
-			"Нужно подписаться на канал "+h.subChannelLink))
+		mk := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Проверить подписку", "draw"),
+			))
+		msg := tgbotapi.NewMessage(chatID, "Подпишись на канал, чтобы получить стикерпак – "+h.subChannelLink)
+		msg.ReplyMarkup = mk
+		h.bot.Send(msg)
 		return
 	}
 

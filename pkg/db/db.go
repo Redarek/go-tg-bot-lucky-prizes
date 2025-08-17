@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/config"
 	"log"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,10 +19,20 @@ func Connect(cfg *config.Config) *pgxpool.Pool {
 		cfg.PostgresDB,
 	)
 
-	dbpool, err := pgxpool.New(context.Background(), dsn)
+	pcfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+		log.Fatalf("parse pool config error: %v", err)
 	}
 
-	return dbpool
+	// Адекватные дефолты (можно вынести в env при желании)
+	pcfg.MaxConns = 50
+	pcfg.MinConns = 5
+	pcfg.MaxConnLifetime = time.Hour
+	pcfg.HealthCheckPeriod = time.Minute
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), pcfg)
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %v", err)
+	}
+	return pool
 }

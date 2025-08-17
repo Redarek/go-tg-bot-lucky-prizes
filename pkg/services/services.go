@@ -7,6 +7,8 @@ import (
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/repositories"
 )
 
+var ErrAlreadyClaimed = errors.New("already_claimed")
+
 type Service struct {
 	Repo *repositories.Repository
 }
@@ -16,25 +18,15 @@ func NewService(repo *repositories.Repository) *Service {
 }
 
 func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (models.StickerPack, error) {
+	// Админ может дергать бесконечно
 	if userID != adminID {
-		if s.Repo.HasUserClaimed(ctx, userID) {
-			return models.StickerPack{}, errors.New("⚡️<u>Попытка была одна — и Фортуна уже выбрала стикерпак под твой стиль!</u>\n" +
-				"🔄Хочешь другой? Тогда заказывай нашу броню TWILIGHT HAMMER и получай в бонус фирменный стикерпак, который идёт в комплекте с экипировкой.\n\n" +
-				"<b>Заказать можешь тут:</b>\n" +
-				"🟣<b><a href=\"https://www.wildberries.ru/brands/311439225-twilight-hammer\">WILDBERRIES</a></b>\n" +
-				"🔵<b><a href=\"https://vk.com/t.hammer.clan\">VKONTAKTE</a></b>")
-		}
-
-		err := s.Repo.MarkUserClaimed(ctx, userID)
+		ok, err := s.Repo.TryClaim(ctx, userID)
 		if err != nil {
 			return models.StickerPack{}, err
 		}
+		if !ok {
+			return models.StickerPack{}, ErrAlreadyClaimed
+		}
 	}
-
-	pack, err := s.Repo.GetRandomStickerPack(ctx)
-	if err != nil {
-		return models.StickerPack{}, err
-	}
-
-	return pack, err
+	return s.Repo.GetRandomStickerPack(ctx)
 }

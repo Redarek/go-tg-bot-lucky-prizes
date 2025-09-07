@@ -45,7 +45,7 @@ func NewHandler(bot *tgbotapi.BotAPI, sender *services.Sender, db *pgxpool.Pool,
 
 func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 	// базовый контекст на обработку одного апдейта
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	switch {
@@ -277,7 +277,7 @@ func (h *Handler) subscribed(ctx context.Context, userID int64) bool {
 
 func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	// Проверка подписки
-	subCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	subCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	if !h.subscribed(subCtx, userID) {
 		mk := tgbotapi.NewInlineKeyboardMarkup(

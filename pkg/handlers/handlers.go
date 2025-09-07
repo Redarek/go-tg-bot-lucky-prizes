@@ -328,13 +328,16 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 
 	// …а дальше — без блокировки текущего воркера
 	go func(chatID int64, url, shop string) {
+		goCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		time.Sleep(2 * time.Second)
 
 		text := "😎<b>НИШТЯК!</b> Ты залутал крутой стикерпак!\n" +
 			"⚔️Теперь у тебя в руках оружие для чатов — <i>бей словами, жги эмоциями, взрывай переписки!</i>\n\n" + url
 		msg := tgbotapi.NewMessage(chatID, text)
 		msg.ParseMode = tgbotapi.ModeHTML
-		_, _ = h.sender.Send(context.Background(), msg)
+		_, _ = h.sender.Send(goCtx, msg)
 
 		time.Sleep(1 * time.Second)
 
@@ -351,6 +354,6 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 		am := tgbotapi.NewMessage(chatID, after)
 		am.ParseMode = tgbotapi.ModeHTML
 		am.ReplyMarkup = mk
-		_, _ = h.sender.Send(context.Background(), am)
+		_, _ = h.sender.Send(goCtx, am)
 	}(chatID, p.URL, h.shopURL)
 }

@@ -64,6 +64,10 @@ jobs:
             SHOP_URL=${{ secrets.SHOP_URL }}
             SUB_CHANNEL_ID=${{ secrets.SUB_CHANNEL_ID }}
             SUB_CHANNEL_LINK=${{ secrets.SUB_CHANNEL_LINK }}
+            CONTEST_CHANNEL_1_ID=${{ secrets.CONTEST_CHANNEL_1_ID }}
+            CONTEST_CHANNEL_1_LINK=${{ secrets.CONTEST_CHANNEL_1_LINK }}
+            CONTEST_CHANNEL_2_ID=${{ secrets.CONTEST_CHANNEL_2_ID }}
+            CONTEST_CHANNEL_2_LINK=${{ secrets.CONTEST_CHANNEL_2_LINK }}
             
             POSTGRES_HOST=db
             POSTGRES_PORT=5432

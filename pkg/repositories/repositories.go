@@ -12,6 +12,12 @@ import (
 )
 
 var ErrNoPacks = errors.New("no_packs")
+var ErrNoAvailablePacks = errors.New("no_available_packs")
+var ErrNoAttempts = errors.New("no_attempts")
+var ErrNoActiveContest = errors.New("no_active_contest")
+var ErrNoParticipants = errors.New("no_participants")
+var ErrActiveContestExists = errors.New("active_contest_exists")
+var ErrContestNotFound = errors.New("contest_not_found")
 
 func init() { rand.Seed(time.Now().UnixNano()) }
 
@@ -66,31 +72,81 @@ func (r *Repository) GetRandomStickerPack(ctx context.Context) (models.StickerPa
 	return p, err
 }
 
-// Атомарная попытка получить право на стикерпак 1 раз на user_id
-func (r *Repository) TryClaim(ctx context.Context, userID int64) (bool, error) {
-	ct, err := r.DB.Exec(ctx, `
-		INSERT INTO user_claims (user_id) VALUES ($1)
-		ON CONFLICT (user_id) DO NOTHING
-	`, userID)
+func (r *Repository) ClaimAvailableStickerPack(ctx context.Context, userID int64) (models.StickerPack, error) {
+	tx, err := r.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return false, err
+		return models.StickerPack{}, err
 	}
-	return ct.RowsAffected() == 1, nil
+	defer tx.Rollback(ctx)
+
+	if _, err = tx.Exec(ctx, `
+		INSERT INTO user_attempts (user_id, attempts) VALUES ($1, 1)
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID); err != nil {
+		return models.StickerPack{}, err
+	}
+
+	var attempts int
+	if err = tx.QueryRow(ctx, `SELECT attempts FROM user_attempts WHERE user_id=$1 FOR UPDATE`, userID).Scan(&attempts); err != nil {
+		return models.StickerPack{}, err
+	}
+	if attempts <= 0 {
+		return models.StickerPack{}, ErrNoAttempts
+	}
+
+	var p models.StickerPack
+	err = tx.QueryRow(ctx, `
+		SELECT sp.id, sp.name, sp.url
+		FROM sticker_packs sp
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM user_pack_claims upc
+			WHERE upc.user_id = $1 AND upc.pack_id = sp.id
+		)
+		ORDER BY RANDOM()
+		LIMIT 1
+	`, userID).Scan(&p.ID, &p.Name, &p.URL)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.StickerPack{}, ErrNoAvailablePacks
+	}
+	if err != nil {
+		return models.StickerPack{}, err
+	}
+
+	if _, err = tx.Exec(ctx, `
+		UPDATE user_attempts
+		SET attempts = attempts - 1
+		WHERE user_id = $1
+	`, userID); err != nil {
+		return models.StickerPack{}, err
+	}
+
+	if _, err = tx.Exec(ctx, `
+		INSERT INTO user_pack_claims (user_id, pack_id)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id, pack_id) DO NOTHING
+	`, userID, p.ID); err != nil {
+		return models.StickerPack{}, err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return models.StickerPack{}, err
+	}
+	return p, nil
 }
 
-func (r *Repository) HasUserClaimed(ctx context.Context, userID int64) bool {
-	var exists bool
-	_ = r.DB.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM user_claims WHERE user_id=$1)`, userID).
-		Scan(&exists)
-	return exists
-}
-
-func (r *Repository) MarkUserClaimed(ctx context.Context, userID int64) error {
-	_, err := r.DB.Exec(ctx,
-		`INSERT INTO user_claims (user_id) VALUES ($1)`,
-		userID)
-	return err
+func (r *Repository) AddAttemptToAllUsers(ctx context.Context) (int64, error) {
+	ct, err := r.DB.Exec(ctx, `
+		INSERT INTO user_attempts (user_id, attempts)
+		SELECT user_id, 1
+		FROM bot_users
+		ON CONFLICT (user_id)
+		DO UPDATE SET attempts = user_attempts.attempts + 1
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 func (r *Repository) SetAdminState(ctx context.Context, st models.AdminState) error {
@@ -122,5 +178,247 @@ func (r *Repository) UpsertBotUser(ctx context.Context, userID int64) error {
 	_, err := r.DB.Exec(ctx,
 		`INSERT INTO bot_users (user_id) VALUES ($1)
          ON CONFLICT (user_id) DO NOTHING`, userID)
+	return err
+}
+
+func (r *Repository) CreateContest(
+	ctx context.Context,
+	title string,
+	rewardPackID int,
+	channels []models.ContestChannel,
+) (models.Contest, error) {
+	tx, err := r.DB.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return models.Contest{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var c models.Contest
+	err = tx.QueryRow(ctx, `
+		INSERT INTO contests (title, status, reward_pack_id)
+		VALUES ($1, 'draft', $2)
+		RETURNING id, title, status, reward_pack_id, winner_user_id, created_at, finished_at
+	`, title, rewardPackID).Scan(
+		&c.ID,
+		&c.Title,
+		&c.Status,
+		&c.RewardPackID,
+		&c.WinnerUserID,
+		&c.CreatedAt,
+		&c.FinishedAt,
+	)
+	if err != nil {
+		return models.Contest{}, err
+	}
+
+	for _, channel := range channels {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO contest_channels (contest_id, channel_id, channel_link, position)
+			VALUES ($1, $2, $3, $4)
+		`, c.ID, channel.ChannelID, channel.ChannelLink, channel.Position)
+		if err != nil {
+			return models.Contest{}, err
+		}
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return models.Contest{}, err
+	}
+	return c, nil
+}
+
+func (r *Repository) GetContestByID(ctx context.Context, contestID int) (models.Contest, error) {
+	var c models.Contest
+	err := r.DB.QueryRow(ctx, `
+		SELECT id, title, status, reward_pack_id, winner_user_id, created_at, finished_at
+		FROM contests
+		WHERE id = $1
+	`, contestID).Scan(
+		&c.ID,
+		&c.Title,
+		&c.Status,
+		&c.RewardPackID,
+		&c.WinnerUserID,
+		&c.CreatedAt,
+		&c.FinishedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.Contest{}, ErrContestNotFound
+	}
+	return c, err
+}
+
+func (r *Repository) GetActiveContest(ctx context.Context) (models.Contest, error) {
+	var c models.Contest
+	err := r.DB.QueryRow(ctx, `
+		SELECT id, title, status, reward_pack_id, winner_user_id, created_at, finished_at
+		FROM contests
+		WHERE status='active'
+		ORDER BY id DESC
+		LIMIT 1
+	`).Scan(
+		&c.ID,
+		&c.Title,
+		&c.Status,
+		&c.RewardPackID,
+		&c.WinnerUserID,
+		&c.CreatedAt,
+		&c.FinishedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.Contest{}, ErrNoActiveContest
+	}
+	return c, err
+}
+
+func (r *Repository) SetContestStatus(ctx context.Context, contestID int, status string) error {
+	switch status {
+	case "active":
+		tx, err := r.DB.BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+
+		var activeCount int
+		if err = tx.QueryRow(ctx, `SELECT COUNT(1) FROM contests WHERE status='active' AND id <> $1`, contestID).Scan(&activeCount); err != nil {
+			return err
+		}
+		if activeCount > 0 {
+			return ErrActiveContestExists
+		}
+
+		_, err = tx.Exec(ctx, `UPDATE contests SET status='active', finished_at=NULL WHERE id=$1`, contestID)
+		if err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+
+	case "draft":
+		_, err := r.DB.Exec(ctx, `UPDATE contests SET status='draft', finished_at=NULL WHERE id=$1`, contestID)
+		return err
+	case "closed":
+		_, err := r.DB.Exec(ctx, `UPDATE contests SET status='closed', finished_at=now() WHERE id=$1`, contestID)
+		return err
+	default:
+		return errors.New("invalid contest status")
+	}
+}
+
+func (r *Repository) GetContestChannels(ctx context.Context, contestID int) ([]models.ContestChannel, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT contest_id, channel_id, channel_link, position
+		FROM contest_channels
+		WHERE contest_id = $1
+		ORDER BY position ASC
+	`, contestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var channels []models.ContestChannel
+	for rows.Next() {
+		var c models.ContestChannel
+		if err := rows.Scan(&c.ContestID, &c.ChannelID, &c.ChannelLink, &c.Position); err != nil {
+			return nil, err
+		}
+		channels = append(channels, c)
+	}
+	return channels, rows.Err()
+}
+
+func (r *Repository) GetStickerPackByID(ctx context.Context, id int) (models.StickerPack, error) {
+	var p models.StickerPack
+	err := r.DB.QueryRow(ctx, `
+		SELECT id, name, url
+		FROM sticker_packs
+		WHERE id=$1
+	`, id).Scan(&p.ID, &p.Name, &p.URL)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.StickerPack{}, ErrNoPacks
+	}
+	return p, err
+}
+
+func (r *Repository) AddParticipant(ctx context.Context, contestID int, userID int64) (bool, error) {
+	ct, err := r.DB.Exec(ctx, `
+		INSERT INTO contest_participants (contest_id, user_id)
+		VALUES ($1, $2)
+		ON CONFLICT (contest_id, user_id) DO NOTHING
+	`, contestID, userID)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() == 1, nil
+}
+
+func (r *Repository) ListParticipants(ctx context.Context, contestID int) ([]models.ContestParticipant, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT contest_id, user_id, joined_at
+		FROM contest_participants
+		WHERE contest_id = $1
+		ORDER BY joined_at ASC
+	`, contestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.ContestParticipant
+	for rows.Next() {
+		var p models.ContestParticipant
+		if err := rows.Scan(&p.ContestID, &p.UserID, &p.JoinedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, p)
+	}
+	return list, rows.Err()
+}
+
+func (r *Repository) ListParticipantsExportRows(ctx context.Context, contestID int) ([]models.ContestParticipantExportRow, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT user_id, joined_at
+		FROM contest_participants
+		WHERE contest_id = $1
+		ORDER BY joined_at ASC
+	`, contestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.ContestParticipantExportRow
+	for rows.Next() {
+		var p models.ContestParticipantExportRow
+		if err := rows.Scan(&p.UserID, &p.JoinedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, p)
+	}
+	return list, rows.Err()
+}
+
+func (r *Repository) PickRandomWinner(ctx context.Context, contestID int) (int64, error) {
+	var userID int64
+	err := r.DB.QueryRow(ctx, `
+		SELECT user_id
+		FROM contest_participants
+		WHERE contest_id = $1
+		ORDER BY RANDOM()
+		LIMIT 1
+	`, contestID).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNoParticipants
+	}
+	return userID, err
+}
+
+func (r *Repository) SetWinner(ctx context.Context, contestID int, winnerUserID int64) error {
+	_, err := r.DB.Exec(ctx, `
+		UPDATE contests
+		SET winner_user_id = $2
+		WHERE id = $1
+	`, contestID, winnerUserID)
 	return err
 }

@@ -31,6 +31,7 @@ func main() {
 	pub := tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
 		tgbotapi.BotCommand{Command: "draw", Description: "Получить стикерпак"},
+		tgbotapi.BotCommand{Command: "contest", Description: "Участвовать в розыгрыше"},
 	)
 	publicScope := tgbotapi.NewBotCommandScopeDefault()
 	pub.Scope = &publicScope
@@ -40,6 +41,12 @@ func main() {
 		tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
 		tgbotapi.BotCommand{Command: "packs", Description: "Список стикерпаков"},
 		tgbotapi.BotCommand{Command: "addpack", Description: "Добавить стикерпак"},
+		tgbotapi.BotCommand{Command: "addattempt", Description: "Добавить попытку всем"},
+		tgbotapi.BotCommand{Command: "contestadd", Description: "Создать розыгрыш (draft)"},
+		tgbotapi.BotCommand{Command: "conteststart", Description: "Активировать розыгрыш по ID"},
+		tgbotapi.BotCommand{Command: "contestclose", Description: "Закрыть активный розыгрыш"},
+		tgbotapi.BotCommand{Command: "contestpickwinner", Description: "Выбрать победителя"},
+		tgbotapi.BotCommand{Command: "contestparticipants", Description: "Выгрузить участников XLSX"},
 	)
 	adminScope := tgbotapi.NewBotCommandScopeChat(cfg.AdminID)
 	admin.Scope = &adminScope

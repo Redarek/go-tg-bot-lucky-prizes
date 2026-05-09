@@ -9,7 +9,7 @@ A production-ready Telegram bot that gives each user **one random “entity”**
 
 ## Features
 
-* **One-time claim per user** (atomic, race-free in Postgres).
+* **Attempt-based claim per user** (atomic, race-free in Postgres).
 * **Random entity selection** from a configurable pool.
 * **Admin flow** to add/list/edit/delete entities via bot commands.
 * **Parallel, non-blocking update handling** (worker pool + rate limiter).
@@ -37,8 +37,16 @@ CREATE TABLE IF NOT EXISTS sticker_packs (
   url  TEXT NOT NULL      -- generic "text field": a URL or any text payload
 );
 
-CREATE TABLE IF NOT EXISTS user_claims (
-  user_id BIGINT PRIMARY KEY
+CREATE TABLE IF NOT EXISTS user_attempts (
+  user_id  BIGINT PRIMARY KEY,
+  attempts INT NOT NULL DEFAULT 1 CHECK (attempts >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS user_pack_claims (
+  user_id    BIGINT NOT NULL,
+  pack_id    INT NOT NULL REFERENCES sticker_packs(id) ON DELETE CASCADE,
+  claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, pack_id)
 );
 
 CREATE TABLE IF NOT EXISTS admin_states (
@@ -50,6 +58,32 @@ CREATE TABLE IF NOT EXISTS admin_states (
 CREATE TABLE bot_users (
   user_id    BIGINT PRIMARY KEY,
   created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE contests (
+  id             SERIAL PRIMARY KEY,
+  title          TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK (status IN ('draft','active','closed')),
+  reward_pack_id INT NOT NULL REFERENCES sticker_packs(id),
+  winner_user_id BIGINT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at    TIMESTAMPTZ
+);
+
+CREATE TABLE contest_channels (
+  contest_id   INT NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+  channel_id   BIGINT NOT NULL,
+  channel_link TEXT NOT NULL,
+  position     SMALLINT NOT NULL,
+  PRIMARY KEY (contest_id, channel_id),
+  UNIQUE (contest_id, position)
+);
+
+CREATE TABLE contest_participants (
+  contest_id INT NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+  user_id    BIGINT NOT NULL,
+  joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (contest_id, user_id)
 );
 ```
 
@@ -68,6 +102,10 @@ Set via `.env` (see deploy section for auto-provision). Required keys:
 | `SHOP_URL`          | URL for CTA button after claim (any link)               |
 | `SUB_CHANNEL_ID`    | Optional: channel ID for subscription check (`-100...`) |
 | `SUB_CHANNEL_LINK`  | Public link to the channel (used in prompt)             |
+| `CONTEST_CHANNEL_1_ID` | Required for contests: channel 1 ID (`-100...`)     |
+| `CONTEST_CHANNEL_1_LINK` | Public link to channel 1 (URL or `@name`)         |
+| `CONTEST_CHANNEL_2_ID` | Required for contests: channel 2 ID (`-100...`)     |
+| `CONTEST_CHANNEL_2_LINK` | Public link to channel 2 (URL or `@name`)         |
 | `POSTGRES_HOST`     | Postgres host (e.g., `db` in docker-compose)            |
 | `POSTGRES_PORT`     | Postgres port (`5432`)                                  |
 | `POSTGRES_USER`     | Postgres user                                           |
@@ -145,6 +183,7 @@ This repo includes `deploy.yml` (GitHub Actions) that:
 * `SSH_KEY` — private key for your deploy user.
 * `SSH_USER`, `SSH_HOST` — SSH creds.
 * `TELEGRAM_APITOKEN`, `ADMIN_ID`, `SHOP_URL`, `SUB_CHANNEL_ID`, `SUB_CHANNEL_LINK`.
+* `CONTEST_CHANNEL_1_ID`, `CONTEST_CHANNEL_1_LINK`, `CONTEST_CHANNEL_2_ID`, `CONTEST_CHANNEL_2_LINK`.
 * `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
 
 > The workflow sets `POSTGRES_HOST=db` and `POSTGRES_PORT=5432` for compose.
@@ -156,9 +195,15 @@ This repo includes `deploy.yml` (GitHub Actions) that:
 * `/start` — send start screen.
 * `/packs` — list all entities (rows), choose one to edit/delete.
 * `/addpack` — guided flow to add new entity.
+* `/addattempt` — add +1 draw attempt to all users.
 * `/draw` — force a claim+send (admin bypasses one-time restriction).
+* `/contestadd` — create contest in `draft` (dialog: title + reward pack id).
+* `/conteststart <id>` — activate contest by id.
+* `/contestclose` — close active contest manually.
+* `/contestpickwinner` — randomly pick winner in active contest (contest stays active).
+* `/contestparticipants` — export active contest participants as XLSX.
 
-> For end-users, `/start` and `/draw` are available. Each non-admin user can claim once.
+> For end-users, `/start`, `/draw`, and `/contest` are available. `/contest` (and start button) confirms participation only after subscription to both contest channels.
 
 ---
 
@@ -166,8 +211,9 @@ This repo includes `deploy.yml` (GitHub Actions) that:
 
 * **Worker pool** for updates (parallel handling).
 * **Global Telegram API rate-limiter** to avoid HTTP 429.
-* **Atomic one-time claim:** `INSERT ... ON CONFLICT DO NOTHING` on `user_claims`.
-* **Typed errors** (`ErrAlreadyClaimed`, `ErrNoPacks`) for clean control flow.
+* **Atomic attempts + history:** each draw decrements `user_attempts` and stores claimed pack in `user_pack_claims`.
+* **No duplicate reward for same user:** random selection excludes packs already claimed by that user.
+* **Typed errors** (`ErrNoAttempts`, `ErrNoAvailablePacks`, `ErrNoPacks`) for clean control flow.
 * **Context timeouts** around DB and Telegram operations.
 * **Callback ACK** to remove loading “hourglass” in Telegram UI.
 

@@ -5,41 +5,50 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/config"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/models"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/repositories"
 	"github.com/Redarek/go-tg-bot-lucky-prizes/pkg/services"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"log"
-	"strconv"
-	"strings"
-	"time"
 )
 
 //go:embed assets/start.jpeg
 var StartJPG []byte
 
 type Handler struct {
-	bot            *tgbotapi.BotAPI
-	sender         *services.Sender
-	service        *services.Service
-	adminID        int64
-	shopURL        string
-	subChannelID   int64
-	subChannelLink string
+	bot                 *tgbotapi.BotAPI
+	sender              *services.Sender
+	service             *services.Service
+	adminID             int64
+	shopURL             string
+	subChannelID        int64
+	subChannelLink      string
+	contestChannel1ID   int64
+	contestChannel1Link string
+	contestChannel2ID   int64
+	contestChannel2Link string
 }
 
 func NewHandler(bot *tgbotapi.BotAPI, sender *services.Sender, db *pgxpool.Pool, cfg *config.Config) *Handler {
 	repo := repositories.NewRepository(db)
 	return &Handler{
-		bot:            bot,
-		sender:         sender,
-		service:        services.NewService(repo),
-		adminID:        cfg.AdminID,
-		shopURL:        cfg.ShopURL,
-		subChannelID:   cfg.SubChannelID,
-		subChannelLink: cfg.SubChannelLink,
+		bot:                 bot,
+		sender:              sender,
+		service:             services.NewService(repo),
+		adminID:             cfg.AdminID,
+		shopURL:             cfg.ShopURL,
+		subChannelID:        cfg.SubChannelID,
+		subChannelLink:      cfg.SubChannelLink,
+		contestChannel1ID:   cfg.ContestChannel1ID,
+		contestChannel1Link: cfg.ContestChannel1Link,
+		contestChannel2ID:   cfg.ContestChannel2ID,
+		contestChannel2Link: cfg.ContestChannel2Link,
 	}
 }
 
@@ -63,6 +72,9 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 			switch m.Command() {
 			case "draw":
 				h.processDraw(ctx, m.Chat.ID, m.From.ID)
+				return
+			case "contest":
+				h.processContestJoin(ctx, m.Chat.ID, m.From.ID)
 				return
 			case "start":
 				h.sendStartMessage(ctx, m.Chat.ID)
@@ -90,7 +102,15 @@ func (h *Handler) sendStartMessage(ctx context.Context, chatID int64) {
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Получить стикерпак", "draw"),
-		))
+		),
+	)
+
+	contestCtx, contestCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer contestCancel()
+	hasActiveGiveaway := false
+	if _, _, err := h.service.GetActiveContestWithChannels(contestCtx); err == nil {
+		hasActiveGiveaway = true
+	}
 
 	caption := "🎯<b><u>Готов испытать свою удачу?</u></b>\n" +
 		"Запускай Колесо Фортуны и забирай один из <i>фирменных ультра-брутальных</i> стикерпаков <b>TWILIGHT HAMMER!</b>\n" +
@@ -102,6 +122,30 @@ func (h *Handler) sendStartMessage(ctx context.Context, chatID int64) {
 	photo.ParseMode = tgbotapi.ModeHTML
 	if _, err := h.sender.Send(ctx, photo); err != nil {
 		log.Println("sendStartMessage:", err)
+	}
+
+	if !hasActiveGiveaway {
+		return
+	}
+
+	giveawayMk := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("УЧАСТВОВАТЬ", "contest_join"),
+		),
+	)
+	giveawayText := fmt.Sprintf(
+		"🔥<b>АБСОЛЮТНЫЙ РОЗЫГРЫШ</b>🔥\n\n" +
+			"⚔️ Врывайся в бой за трофеи <b>TWILIGHT HAMMER</b>.\n" +
+			"☠️ Правила просты: подпишись на 2 канала, нажми кнопку и закрепи своё место в списке бойцов.\n" +
+			"🎁 За подтверждённое участие получаешь награду сразу.\n\n" +
+			"<b>Розыгрыш уже открыт — жми и залетай.</b>",
+	)
+
+	giveawayMsg := tgbotapi.NewMessage(chatID, giveawayText)
+	giveawayMsg.ParseMode = tgbotapi.ModeHTML
+	giveawayMsg.ReplyMarkup = giveawayMk
+	if _, err := h.sender.Send(ctx, giveawayMsg); err != nil {
+		log.Println("sendStartMessage giveaway:", err)
 	}
 }
 
@@ -122,6 +166,9 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 
 	case q.Data == "draw":
 		h.processDraw(ctx, q.Message.Chat.ID, q.From.ID)
+
+	case q.Data == "contest_join", q.Data == "contest_recheck":
+		h.processContestJoin(ctx, q.Message.Chat.ID, q.From.ID)
 
 	case strings.HasPrefix(q.Data, "pack_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "pack_"))
@@ -182,8 +229,104 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 			UserID: m.From.ID, State: "add_wait_name",
 		})
 		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Отправьте название нового стикерпака:"))
+	case "addattempt":
+		dbctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		updated, err := h.service.Repo.AddAttemptToAllUsers(dbctx)
+		if err != nil {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка добавления попыток: "+err.Error()))
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("✅ Добавлена 1 попытка всем пользователям (обновлено записей: %d)", updated)))
 	case "draw":
 		h.processDraw(ctx, m.Chat.ID, m.From.ID)
+	case "contestadd":
+		dbctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		_ = h.service.Repo.SetAdminState(dbctx, models.AdminState{
+			UserID: m.From.ID, State: "contest_add_wait_title",
+		})
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Отправьте название розыгрыша:"))
+	case "conteststart":
+		contestID, err := strconv.Atoi(strings.TrimSpace(m.CommandArguments()))
+		if err != nil || contestID <= 0 {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Использование: /conteststart <contest_id>"))
+			return
+		}
+		dbctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		defer cancel()
+		if err = h.service.ActivateContest(dbctx, contestID); err != nil {
+			switch {
+			case errors.Is(err, services.ErrActiveContestExists):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Нельзя активировать: уже есть активный розыгрыш. Закройте его командой /contestclose."))
+			case errors.Is(err, services.ErrContestNotFound):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Розыгрыш не найден."))
+			default:
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка активации розыгрыша: "+err.Error()))
+			}
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "✅ Розыгрыш активирован."))
+	case "contestclose":
+		dbctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		defer cancel()
+		_, err := h.service.CloseActiveContest(dbctx)
+		if err != nil {
+			if errors.Is(err, services.ErrNoActiveContest) {
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Активного розыгрыша нет."))
+				return
+			}
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка закрытия розыгрыша: "+err.Error()))
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "✅ Розыгрыш закрыт вручную."))
+	case "contestpickwinner":
+		dbctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		_, winnerUserID, err := h.service.PickWinnerInActiveContest(dbctx)
+		if err != nil {
+			switch {
+			case errors.Is(err, services.ErrNoActiveContest):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Активного розыгрыша нет."))
+			case errors.Is(err, services.ErrNoParticipants):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "У активного розыгрыша пока нет участников."))
+			default:
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка выбора победителя: "+err.Error()))
+			}
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("🏆 Победитель розыгрыша: user_id=%d\nРозыгрыш остаётся активным до ручного закрытия.", winnerUserID)))
+	case "contestparticipants":
+		dbctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		contest, rows, err := h.service.GetActiveContestParticipants(dbctx)
+		if err != nil {
+			if errors.Is(err, services.ErrNoActiveContest) {
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Активного розыгрыша нет."))
+				return
+			}
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка выгрузки участников: "+err.Error()))
+			return
+		}
+		if len(rows) == 0 {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "У активного розыгрыша пока нет участников."))
+			return
+		}
+
+		fileData, err := buildContestParticipantsXLSX(contest, rows)
+		if err != nil {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Не удалось сформировать XLSX: "+err.Error()))
+			return
+		}
+
+		doc := tgbotapi.NewDocument(m.Chat.ID, tgbotapi.FileBytes{
+			Name:  fmt.Sprintf("contest_%d_participants.xlsx", contest.ID),
+			Bytes: fileData,
+		})
+		doc.Caption = "Участники активного розыгрыша"
+		if _, err = h.sender.Send(ctx, doc); err != nil {
+			log.Println("contestparticipants:", err)
+		}
 	}
 }
 
@@ -248,6 +391,48 @@ func (h *Handler) handleAdminDialog(ctx context.Context, m *tgbotapi.Message) {
 		}
 		_ = h.service.Repo.ClearAdminState(dbctx, m.From.ID)
 		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "✅ Обновлено"))
+
+	case "contest_add_wait_title":
+		_ = h.service.Repo.SetAdminState(dbctx, models.AdminState{
+			UserID: m.From.ID, State: "contest_add_wait_reward_pack", Data: m.Text,
+		})
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Теперь отправьте reward pack id (число):"))
+
+	case "contest_add_wait_reward_pack":
+		rewardPackID, err := strconv.Atoi(strings.TrimSpace(m.Text))
+		if err != nil || rewardPackID <= 0 {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "reward pack id должен быть положительным числом."))
+			return
+		}
+
+		contest, err := h.service.CreateContest(
+			dbctx,
+			st.Data,
+			rewardPackID,
+			h.contestChannel1ID,
+			normalizeTelegramChannelLink(h.contestChannel1Link),
+			h.contestChannel2ID,
+			normalizeTelegramChannelLink(h.contestChannel2Link),
+		)
+		if err != nil {
+			switch {
+			case errors.Is(err, services.ErrContestChannelsNotConfigured):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Настройки каналов розыгрыша не заданы (CONTEST_CHANNEL_1/2_*)."))
+			case errors.Is(err, services.ErrInvalidRewardPack):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Такого reward pack id нет в sticker_packs."))
+			case errors.Is(err, services.ErrActiveContestExists):
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Нельзя создать новый розыгрыш, пока есть активный. Закройте активный командой /contestclose."))
+			default:
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка создания розыгрыша: "+err.Error()))
+			}
+			return
+		}
+
+		_ = h.service.Repo.ClearAdminState(dbctx, m.From.ID)
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(
+			m.Chat.ID,
+			fmt.Sprintf("✅ Розыгрыш создан в статусе draft.\nID розыгрыша: %d\nЗапуск: /conteststart %d", contest.ID, contest.ID),
+		))
 	}
 }
 
@@ -275,6 +460,125 @@ func (h *Handler) subscribed(ctx context.Context, userID int64) bool {
 	}
 }
 
+func (h *Handler) subscribedToChannel(ctx context.Context, userID, channelID int64) bool {
+	if channelID == 0 {
+		return false
+	}
+	if err := h.sender.Wait(ctx); err != nil {
+		log.Println("rate wait:", err)
+		return false
+	}
+
+	cfg := tgbotapi.ChatConfigWithUser{ChatID: channelID, UserID: userID}
+	member, err := h.bot.GetChatMember(tgbotapi.GetChatMemberConfig{ChatConfigWithUser: cfg})
+	if err != nil {
+		log.Println("GetChatMember:", err)
+		return false
+	}
+
+	switch member.Status {
+	case "creator", "administrator", "member":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) getMissingContestChannels(ctx context.Context, userID int64, channels []models.ContestChannel) []models.ContestChannel {
+	var missing []models.ContestChannel
+	for _, ch := range channels {
+		if !h.subscribedToChannel(ctx, userID, ch.ChannelID) {
+			missing = append(missing, ch)
+		}
+	}
+	return missing
+}
+
+func (h *Handler) processContestJoin(ctx context.Context, chatID, userID int64) {
+	dbctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	_, channels, err := h.service.GetActiveContestWithChannels(dbctx)
+	if err != nil {
+		if errors.Is(err, services.ErrNoActiveContest) {
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Сейчас нет активного розыгрыша."))
+			return
+		}
+		log.Println("GetActiveContestWithChannels:", err)
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Ошибка получения данных розыгрыша. Попробуйте позже."))
+		return
+	}
+	if len(channels) < 2 {
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Розыгрыш временно недоступен: не настроены обязательные каналы."))
+		return
+	}
+
+	subCtx, subCancel := context.WithTimeout(ctx, 4*time.Second)
+	defer subCancel()
+	missing := h.getMissingContestChannels(subCtx, userID, channels)
+	if len(missing) > 0 {
+		rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(missing)+1)
+		for _, ch := range missing {
+			link := normalizeTelegramChannelLink(ch.ChannelLink)
+			if link == "" {
+				continue
+			}
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Подписаться: "+ch.ChannelLink, link),
+			))
+		}
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Проверить снова", "contest_recheck"),
+		))
+		msg := tgbotapi.NewMessage(chatID, "Для участия в розыгрыше нужно подписаться на оба канала.")
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
+		_, _ = h.sender.Send(ctx, msg)
+		return
+	}
+
+	joinCtx, joinCancel := context.WithTimeout(ctx, 700*time.Millisecond)
+	defer joinCancel()
+	_, rewardPack, _, err := h.service.JoinActiveContest(joinCtx, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrAlreadyParticipant):
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Ты уже участвуешь в этом розыгрыше ✅"))
+		case errors.Is(err, services.ErrNoActiveContest):
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Сейчас нет активного розыгрыша."))
+		case errors.Is(err, services.ErrInvalidRewardPack):
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Награда розыгрыша пока недоступна, попробуйте позже."))
+		default:
+			log.Println("JoinActiveContest:", err)
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Не удалось подтвердить участие. Попробуйте позже."))
+		}
+		return
+	}
+
+	text := fmt.Sprintf(
+		"⚔️<b>БОЕЦ ПРИНЯТ В РОЗЫГРЫШ</b>\n"+
+			"🔥 Подписка подтверждена. Твой жетон участия выбит в сталь.\n"+
+			"🎁 <b>Трофей за вход в бой:</b>\n%s\n\n"+
+			"☠️ Держи строй и не теряй хватку — дальше только жёстче.",
+		rewardPack.URL,
+	)
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	_, _ = h.sender.Send(ctx, msg)
+}
+
+func normalizeTelegramChannelLink(link string) string {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return ""
+	}
+	if strings.HasPrefix(link, "https://") || strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "tg://") {
+		return link
+	}
+	if strings.HasPrefix(link, "@") && len(link) > 1 {
+		return "https://t.me/" + strings.TrimPrefix(link, "@")
+	}
+	return "https://t.me/" + link
+}
+
 func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	// Проверка подписки
 	subCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
@@ -296,7 +600,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	p, err := h.service.ClaimStickerPack(dbctx, userID, h.adminID)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrAlreadyClaimed):
+		case errors.Is(err, services.ErrNoAttempts):
 			mk := tgbotapi.NewInlineKeyboardMarkup(
 				tgbotapi.NewInlineKeyboardRow(
 					tgbotapi.NewInlineKeyboardButtonURL("Заказать броню", h.shopURL),
@@ -310,6 +614,9 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 			msg.ParseMode = tgbotapi.ModeHTML
 			msg.ReplyMarkup = mk
 			_, _ = h.sender.Send(ctx, msg)
+			return
+		case errors.Is(err, services.ErrNoAvailablePacks):
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "⚠️ Ты уже получил все доступные стикерпаки. Жди пополнение и новую попытку."))
 			return
 		case errors.Is(err, repositories.ErrNoPacks):
 			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "⚠️ Стикерпаков пока нет. Попробуйте позже."))

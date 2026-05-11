@@ -39,10 +39,16 @@ type ContestChannel struct {
 type ContestParticipant struct {
 	ContestID int
 	UserID    int64
+	Username  string
+	FirstName string
+	LastName  string
 	JoinedAt  time.Time
 }
 
 type ContestParticipantExportRow struct {
-	UserID   int64
-	JoinedAt time.Time
+	UserID    int64
+	Username  string
+	FirstName string
+	LastName  string
+	JoinedAt  time.Time
 }

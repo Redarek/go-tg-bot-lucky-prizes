@@ -56,8 +56,22 @@ CREATE TABLE IF NOT EXISTS admin_states (
 );
 
 CREATE TABLE bot_users (
-  user_id    BIGINT PRIMARY KEY,
-  created_at TIMESTAMPTZ DEFAULT now()
+  user_id      BIGINT PRIMARY KEY,
+  username     TEXT,
+  first_name   TEXT,
+  last_name    TEXT,
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bot_message_targets (
+  user_id           BIGINT PRIMARY KEY REFERENCES bot_users(user_id) ON DELETE CASCADE,
+  can_message       BOOLEAN NOT NULL DEFAULT TRUE,
+  last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error_code   INTEGER,
+  last_error_text   TEXT,
+  blocked_at        TIMESTAMPTZ,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE contests (

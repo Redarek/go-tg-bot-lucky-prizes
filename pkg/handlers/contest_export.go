@@ -13,7 +13,7 @@ func buildContestParticipantsXLSX(contest models.Contest, rows []models.ContestP
 	const sheet = "participants"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"contest_id", "user_id", "joined_at"}
+	headers := []string{"contest_id", "user_id", "username", "first_name", "last_name", "profile_link", "joined_at"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		if err := f.SetCellStr(sheet, cell, header); err != nil {
@@ -29,7 +29,23 @@ func buildContestParticipantsXLSX(contest models.Contest, rows []models.ContestP
 		if err := f.SetCellInt(sheet, fmt.Sprintf("B%d", r), row.UserID); err != nil {
 			return nil, err
 		}
-		if err := f.SetCellStr(sheet, fmt.Sprintf("C%d", r), row.JoinedAt.UTC().Format(time.RFC3339)); err != nil {
+		if err := f.SetCellStr(sheet, fmt.Sprintf("C%d", r), row.Username); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellStr(sheet, fmt.Sprintf("D%d", r), row.FirstName); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellStr(sheet, fmt.Sprintf("E%d", r), row.LastName); err != nil {
+			return nil, err
+		}
+		profileLink := fmt.Sprintf("tg://user?id=%d", row.UserID)
+		if row.Username != "" {
+			profileLink = "https://t.me/" + row.Username
+		}
+		if err := f.SetCellStr(sheet, fmt.Sprintf("F%d", r), profileLink); err != nil {
+			return nil, err
+		}
+		if err := f.SetCellStr(sheet, fmt.Sprintf("G%d", r), row.JoinedAt.UTC().Format(time.RFC3339)); err != nil {
 			return nil, err
 		}
 	}
@@ -51,7 +67,13 @@ func buildContestParticipantsXLSX(contest models.Contest, rows []models.ContestP
 	if err := f.SetColWidth(sheet, "B", "B", 18); err != nil {
 		return nil, err
 	}
-	if err := f.SetColWidth(sheet, "C", "C", 30); err != nil {
+	if err := f.SetColWidth(sheet, "C", "E", 20); err != nil {
+		return nil, err
+	}
+	if err := f.SetColWidth(sheet, "F", "F", 34); err != nil {
+		return nil, err
+	}
+	if err := f.SetColWidth(sheet, "G", "G", 30); err != nil {
 		return nil, err
 	}
 

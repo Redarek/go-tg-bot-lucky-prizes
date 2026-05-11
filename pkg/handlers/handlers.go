@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"strconv"
 	"strings"
@@ -60,6 +61,7 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 	switch {
 	case upd.Message != nil:
 		m := upd.Message
+		h.trackUserInteraction(ctx, m.From, m.Chat.IsPrivate())
 
 		// Сначала админские команды
 		if m.IsCommand() && m.From != nil && m.From.ID == h.adminID {
@@ -74,7 +76,7 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 				h.processDraw(ctx, m.Chat.ID, m.From.ID)
 				return
 			case "contest":
-				h.processContestJoin(ctx, m.Chat.ID, m.From.ID)
+				h.processContestJoin(ctx, m.Chat.ID, m.From)
 				return
 			case "start":
 				h.sendStartMessage(ctx, m.Chat.ID)
@@ -88,17 +90,16 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 		}
 
 	case upd.CallbackQuery != nil:
+		isPrivate := false
+		if upd.CallbackQuery.Message != nil {
+			isPrivate = upd.CallbackQuery.Message.Chat.IsPrivate()
+		}
+		h.trackUserInteraction(ctx, upd.CallbackQuery.From, isPrivate)
 		h.handleCallback(ctx, upd.CallbackQuery)
 	}
 }
 
 func (h *Handler) sendStartMessage(ctx context.Context, chatID int64) {
-	dbctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-	if err := h.service.Repo.UpsertBotUser(dbctx, chatID); err != nil {
-		log.Println("UpsertBotUser:", err)
-	}
-
 	mk := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Получить стикерпак", "draw"),
@@ -168,7 +169,30 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 		h.processDraw(ctx, q.Message.Chat.ID, q.From.ID)
 
 	case q.Data == "contest_join", q.Data == "contest_recheck":
-		h.processContestJoin(ctx, q.Message.Chat.ID, q.From.ID)
+		h.processContestJoin(ctx, q.Message.Chat.ID, q.From)
+
+	case q.Data == "contest_close_confirm":
+		if q.From.ID != h.adminID {
+			return
+		}
+		dbctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		defer cancel()
+		_, err := h.service.CloseActiveContest(dbctx)
+		if err != nil {
+			if errors.Is(err, services.ErrNoActiveContest) {
+				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "Активного розыгрыша нет."))
+				return
+			}
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "Ошибка закрытия розыгрыша: "+err.Error()))
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "✅ Розыгрыш закрыт вручную. Список участников сохранён в базе."))
+
+	case q.Data == "contest_close_cancel":
+		if q.From.ID != h.adminID {
+			return
+		}
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "Ок, закрытие розыгрыша отменено."))
 
 	case strings.HasPrefix(q.Data, "pack_"):
 		id, _ := strconv.Atoi(strings.TrimPrefix(q.Data, "pack_"))
@@ -268,22 +292,30 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 		}
 		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "✅ Розыгрыш активирован."))
 	case "contestclose":
-		dbctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		dbctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		defer cancel()
-		_, err := h.service.CloseActiveContest(dbctx)
-		if err != nil {
+		if _, _, err := h.service.GetActiveContestWithChannels(dbctx); err != nil {
 			if errors.Is(err, services.ErrNoActiveContest) {
 				_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Активного розыгрыша нет."))
 				return
 			}
-			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Ошибка закрытия розыгрыша: "+err.Error()))
+			_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "Не удалось проверить активный розыгрыш: "+err.Error()))
 			return
 		}
-		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, "✅ Розыгрыш закрыт вручную."))
+
+		mk := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("✅ Подтвердить закрытие", "contest_close_confirm"),
+				tgbotapi.NewInlineKeyboardButtonData("❌ Отмена", "contest_close_cancel"),
+			),
+		)
+		msg := tgbotapi.NewMessage(m.Chat.ID, "Закрыть активный розыгрыш? Участники не удаляются, но новый вход в розыгрыш будет остановлен.")
+		msg.ReplyMarkup = mk
+		_, _ = h.sender.Send(ctx, msg)
 	case "contestpickwinner":
 		dbctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 		defer cancel()
-		_, winnerUserID, err := h.service.PickWinnerInActiveContest(dbctx)
+		_, winner, err := h.service.PickWinnerInActiveContest(dbctx)
 		if err != nil {
 			switch {
 			case errors.Is(err, services.ErrNoActiveContest):
@@ -295,7 +327,17 @@ func (h *Handler) handleAdminCommand(ctx context.Context, m *tgbotapi.Message) {
 			}
 			return
 		}
-		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf("🏆 Победитель розыгрыша: user_id=%d\nРозыгрыш остаётся активным до ручного закрытия.", winnerUserID)))
+
+		chatCtx, chatCancel := context.WithTimeout(ctx, 2*time.Second)
+		winner = h.enrichParticipantFromChat(chatCtx, winner)
+		chatCancel()
+
+		winnerMsg := tgbotapi.NewMessage(m.Chat.ID, fmt.Sprintf(
+			"🏆 <b>Победитель розыгрыша выбран</b>\n<b>Профиль победителя:</b>\n%s\n\nРозыгрыш остаётся активным до ручного закрытия.",
+			formatParticipantContactHTML(winner),
+		))
+		winnerMsg.ParseMode = tgbotapi.ModeHTML
+		_, _ = h.sender.Send(ctx, winnerMsg)
 	case "contestparticipants":
 		dbctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -494,7 +536,13 @@ func (h *Handler) getMissingContestChannels(ctx context.Context, userID int64, c
 	return missing
 }
 
-func (h *Handler) processContestJoin(ctx context.Context, chatID, userID int64) {
+func (h *Handler) processContestJoin(ctx context.Context, chatID int64, user *tgbotapi.User) {
+	if user == nil {
+		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(chatID, "Не удалось определить пользователя. Попробуйте снова."))
+		return
+	}
+	userID := user.ID
+
 	dbctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 	_, channels, err := h.service.GetActiveContestWithChannels(dbctx)
@@ -537,7 +585,7 @@ func (h *Handler) processContestJoin(ctx context.Context, chatID, userID int64) 
 
 	joinCtx, joinCancel := context.WithTimeout(ctx, 700*time.Millisecond)
 	defer joinCancel()
-	_, rewardPack, _, err := h.service.JoinActiveContest(joinCtx, userID)
+	_, rewardPack, _, err := h.service.JoinActiveContest(joinCtx, userID, user.UserName, user.FirstName, user.LastName)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrAlreadyParticipant):
@@ -577,6 +625,77 @@ func normalizeTelegramChannelLink(link string) string {
 		return "https://t.me/" + strings.TrimPrefix(link, "@")
 	}
 	return "https://t.me/" + link
+}
+
+func (h *Handler) trackUserInteraction(ctx context.Context, user *tgbotapi.User, canMessage bool) {
+	if user == nil {
+		return
+	}
+
+	dbctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	if err := h.service.Repo.UpsertBotUser(dbctx, user.ID, user.UserName, user.FirstName, user.LastName); err != nil {
+		log.Println("UpsertBotUser:", err)
+		return
+	}
+
+	if !canMessage {
+		return
+	}
+
+	if err := h.service.Repo.UpsertMessageTarget(dbctx, user.ID); err != nil {
+		log.Println("UpsertMessageTarget:", err)
+	}
+}
+
+func formatParticipantContactHTML(p models.ContestParticipantExportRow) string {
+	displayName := strings.TrimSpace(strings.TrimSpace(p.FirstName + " " + p.LastName))
+	if displayName == "" {
+		displayName = "Без имени"
+	}
+	displayName = html.EscapeString(displayName)
+
+	profileLink := fmt.Sprintf("tg://user?id=%d", p.UserID)
+	if p.Username != "" {
+		profileLink = fmt.Sprintf("https://t.me/%s", p.Username)
+	}
+
+	usernamePart := "username: —"
+	if p.Username != "" {
+		usernamePart = fmt.Sprintf("username: @%s", html.EscapeString(p.Username))
+	}
+
+	return fmt.Sprintf(
+		"• id: <code>%d</code>\n• имя: %s\n• %s\n• <a href=\"%s\">Открыть профиль</a>",
+		p.UserID,
+		displayName,
+		usernamePart,
+		profileLink,
+	)
+}
+
+func (h *Handler) enrichParticipantFromChat(ctx context.Context, p models.ContestParticipantExportRow) models.ContestParticipantExportRow {
+	if err := h.sender.Wait(ctx); err != nil {
+		return p
+	}
+
+	chat, err := h.bot.GetChat(tgbotapi.ChatInfoConfig{
+		ChatConfig: tgbotapi.ChatConfig{ChatID: p.UserID},
+	})
+	if err != nil {
+		return p
+	}
+
+	if chat.UserName != "" {
+		p.Username = chat.UserName
+	}
+	if chat.FirstName != "" {
+		p.FirstName = chat.FirstName
+	}
+	if chat.LastName != "" {
+		p.LastName = chat.LastName
+	}
+	return p
 }
 
 func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {

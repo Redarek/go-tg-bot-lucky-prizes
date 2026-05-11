@@ -104,7 +104,13 @@ func (s *Service) GetActiveContestWithChannels(ctx context.Context) (models.Cont
 	return contest, channels, nil
 }
 
-func (s *Service) JoinActiveContest(ctx context.Context, userID int64) (models.Contest, models.StickerPack, bool, error) {
+func (s *Service) JoinActiveContest(
+	ctx context.Context,
+	userID int64,
+	username string,
+	firstName string,
+	lastName string,
+) (models.Contest, models.StickerPack, bool, error) {
 	contest, err := s.Repo.GetActiveContest(ctx)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNoActiveContest) {
@@ -121,7 +127,7 @@ func (s *Service) JoinActiveContest(ctx context.Context, userID int64) (models.C
 		return models.Contest{}, models.StickerPack{}, false, err
 	}
 
-	added, err := s.Repo.AddParticipant(ctx, contest.ID, userID)
+	added, err := s.Repo.AddParticipant(ctx, contest.ID, userID, username, firstName, lastName)
 	if err != nil {
 		return models.Contest{}, models.StickerPack{}, false, err
 	}
@@ -131,27 +137,32 @@ func (s *Service) JoinActiveContest(ctx context.Context, userID int64) (models.C
 	return contest, rewardPack, true, nil
 }
 
-func (s *Service) PickWinnerInActiveContest(ctx context.Context) (models.Contest, int64, error) {
+func (s *Service) PickWinnerInActiveContest(ctx context.Context) (models.Contest, models.ContestParticipantExportRow, error) {
 	contest, err := s.Repo.GetActiveContest(ctx)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNoActiveContest) {
-			return models.Contest{}, 0, ErrNoActiveContest
+			return models.Contest{}, models.ContestParticipantExportRow{}, ErrNoActiveContest
 		}
-		return models.Contest{}, 0, err
+		return models.Contest{}, models.ContestParticipantExportRow{}, err
 	}
 
 	winnerUserID, err := s.Repo.PickRandomWinner(ctx, contest.ID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNoParticipants) {
-			return models.Contest{}, 0, ErrNoParticipants
+			return models.Contest{}, models.ContestParticipantExportRow{}, ErrNoParticipants
 		}
-		return models.Contest{}, 0, err
+		return models.Contest{}, models.ContestParticipantExportRow{}, err
 	}
 
 	if err = s.Repo.SetWinner(ctx, contest.ID, winnerUserID); err != nil {
-		return models.Contest{}, 0, err
+		return models.Contest{}, models.ContestParticipantExportRow{}, err
 	}
-	return contest, winnerUserID, nil
+
+	winner, err := s.Repo.GetParticipantExportRow(ctx, contest.ID, winnerUserID)
+	if err != nil {
+		return models.Contest{}, models.ContestParticipantExportRow{}, err
+	}
+	return contest, winner, nil
 }
 
 func (s *Service) GetActiveContestParticipants(ctx context.Context) (models.Contest, []models.ContestParticipantExportRow, error) {

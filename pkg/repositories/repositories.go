@@ -174,10 +174,39 @@ func (r *Repository) ClearAdminState(ctx context.Context, userID int64) error {
 	return err
 }
 
-func (r *Repository) UpsertBotUser(ctx context.Context, userID int64) error {
+func (r *Repository) UpsertBotUser(
+	ctx context.Context,
+	userID int64,
+	username string,
+	firstName string,
+	lastName string,
+) error {
 	_, err := r.DB.Exec(ctx,
-		`INSERT INTO bot_users (user_id) VALUES ($1)
-         ON CONFLICT (user_id) DO NOTHING`, userID)
+		`INSERT INTO bot_users (user_id, username, first_name, last_name, last_seen_at)
+		VALUES ($1, NULLIF($2, ''), NULLIF($3, ''), NULLIF($4, ''), now())
+		ON CONFLICT (user_id) DO UPDATE
+		SET
+			username = COALESCE(NULLIF(EXCLUDED.username, ''), bot_users.username),
+			first_name = COALESCE(NULLIF(EXCLUDED.first_name, ''), bot_users.first_name),
+			last_name = COALESCE(NULLIF(EXCLUDED.last_name, ''), bot_users.last_name),
+			last_seen_at = now()`,
+		userID, username, firstName, lastName)
+	return err
+}
+
+func (r *Repository) UpsertMessageTarget(ctx context.Context, userID int64) error {
+	_, err := r.DB.Exec(ctx, `
+		INSERT INTO bot_message_targets (user_id, can_message, last_confirmed_at, updated_at)
+		VALUES ($1, TRUE, now(), now())
+		ON CONFLICT (user_id) DO UPDATE
+		SET
+			can_message = TRUE,
+			last_confirmed_at = now(),
+			last_error_code = NULL,
+			last_error_text = NULL,
+			blocked_at = NULL,
+			updated_at = now()
+	`, userID)
 	return err
 }
 
@@ -341,21 +370,43 @@ func (r *Repository) GetStickerPackByID(ctx context.Context, id int) (models.Sti
 	return p, err
 }
 
-func (r *Repository) AddParticipant(ctx context.Context, contestID int, userID int64) (bool, error) {
+func (r *Repository) AddParticipant(
+	ctx context.Context,
+	contestID int,
+	userID int64,
+	username string,
+	firstName string,
+	lastName string,
+) (bool, error) {
 	ct, err := r.DB.Exec(ctx, `
-		INSERT INTO contest_participants (contest_id, user_id)
-		VALUES ($1, $2)
+		INSERT INTO contest_participants (contest_id, user_id, username, first_name, last_name)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''))
 		ON CONFLICT (contest_id, user_id) DO NOTHING
-	`, contestID, userID)
+	`, contestID, userID, username, firstName, lastName)
 	if err != nil {
 		return false, err
 	}
-	return ct.RowsAffected() == 1, nil
+	if ct.RowsAffected() == 1 {
+		return true, nil
+	}
+
+	_, err = r.DB.Exec(ctx, `
+		UPDATE contest_participants
+		SET
+			username = COALESCE(NULLIF($3, ''), username),
+			first_name = COALESCE(NULLIF($4, ''), first_name),
+			last_name = COALESCE(NULLIF($5, ''), last_name)
+		WHERE contest_id = $1 AND user_id = $2
+	`, contestID, userID, username, firstName, lastName)
+	if err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func (r *Repository) ListParticipants(ctx context.Context, contestID int) ([]models.ContestParticipant, error) {
 	rows, err := r.DB.Query(ctx, `
-		SELECT contest_id, user_id, joined_at
+		SELECT contest_id, user_id, COALESCE(username, ''), COALESCE(first_name, ''), COALESCE(last_name, ''), joined_at
 		FROM contest_participants
 		WHERE contest_id = $1
 		ORDER BY joined_at ASC
@@ -368,7 +419,7 @@ func (r *Repository) ListParticipants(ctx context.Context, contestID int) ([]mod
 	var list []models.ContestParticipant
 	for rows.Next() {
 		var p models.ContestParticipant
-		if err := rows.Scan(&p.ContestID, &p.UserID, &p.JoinedAt); err != nil {
+		if err := rows.Scan(&p.ContestID, &p.UserID, &p.Username, &p.FirstName, &p.LastName, &p.JoinedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, p)
@@ -378,7 +429,7 @@ func (r *Repository) ListParticipants(ctx context.Context, contestID int) ([]mod
 
 func (r *Repository) ListParticipantsExportRows(ctx context.Context, contestID int) ([]models.ContestParticipantExportRow, error) {
 	rows, err := r.DB.Query(ctx, `
-		SELECT user_id, joined_at
+		SELECT user_id, COALESCE(username, ''), COALESCE(first_name, ''), COALESCE(last_name, ''), joined_at
 		FROM contest_participants
 		WHERE contest_id = $1
 		ORDER BY joined_at ASC
@@ -391,12 +442,26 @@ func (r *Repository) ListParticipantsExportRows(ctx context.Context, contestID i
 	var list []models.ContestParticipantExportRow
 	for rows.Next() {
 		var p models.ContestParticipantExportRow
-		if err := rows.Scan(&p.UserID, &p.JoinedAt); err != nil {
+		if err := rows.Scan(&p.UserID, &p.Username, &p.FirstName, &p.LastName, &p.JoinedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, p)
 	}
 	return list, rows.Err()
+}
+
+func (r *Repository) GetParticipantExportRow(ctx context.Context, contestID int, userID int64) (models.ContestParticipantExportRow, error) {
+	var p models.ContestParticipantExportRow
+	err := r.DB.QueryRow(ctx, `
+		SELECT user_id, COALESCE(username, ''), COALESCE(first_name, ''), COALESCE(last_name, ''), joined_at
+		FROM contest_participants
+		WHERE contest_id = $1 AND user_id = $2
+		LIMIT 1
+	`, contestID, userID).Scan(&p.UserID, &p.Username, &p.FirstName, &p.LastName, &p.JoinedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.ContestParticipantExportRow{}, ErrNoParticipants
+	}
+	return p, err
 }
 
 func (r *Repository) PickRandomWinner(ctx context.Context, contestID int) (int64, error) {

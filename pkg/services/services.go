@@ -18,9 +18,9 @@ func NewService(repo *repositories.Repository) *Service {
 	return &Service{Repo: repo}
 }
 
-func (s *Service) ClaimStickerPack(ctx context.Context, userID, adminID int64) (models.StickerPack, error) {
+func (s *Service) ClaimStickerPack(ctx context.Context, userID int64, isAdmin bool) (models.StickerPack, error) {
 	// Админ может дергать бесконечно
-	if userID != adminID {
+	if !isAdmin {
 		pack, err := s.Repo.ClaimAvailableStickerPack(ctx, userID)
 		if errors.Is(err, repositories.ErrNoAttempts) {
 			return models.StickerPack{}, ErrNoAttempts

@@ -4,13 +4,14 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
 	TelegramToken       string
-	AdminID             int64
+	AdminIDs            []int64
 	ShopURL             string
 	SubChannelID        int64
 	SubChannelLink      string
@@ -32,10 +33,7 @@ func LoadConfig() *Config {
 		log.Println("Файл .env не найден, используются переменные окружения системы.")
 	}
 
-	adminID, err := strconv.ParseInt(os.Getenv("ADMIN_ID"), 10, 64)
-	if err != nil {
-		log.Fatal("Ошибка при чтении ADMIN_ID: ", err)
-	}
+	adminIDs := parseAdminIDs(os.Getenv("ADMIN_ID"))
 
 	subChannelID, err := strconv.ParseInt(os.Getenv("SUB_CHANNEL_ID"), 10, 64)
 	if err != nil {
@@ -47,7 +45,7 @@ func LoadConfig() *Config {
 
 	return &Config{
 		TelegramToken:       os.Getenv("TELEGRAM_APITOKEN"),
-		AdminID:             adminID,
+		AdminIDs:            adminIDs,
 		ShopURL:             os.Getenv("SHOP_URL"),
 		SubChannelID:        subChannelID,
 		SubChannelLink:      os.Getenv("SUB_CHANNEL_LINK"),
@@ -62,6 +60,37 @@ func LoadConfig() *Config {
 		PostgresPassword: os.Getenv("POSTGRES_PASSWORD"),
 		PostgresDB:       os.Getenv("POSTGRES_DB"),
 	}
+}
+
+func parseAdminIDs(raw string) []int64 {
+	if strings.TrimSpace(raw) == "" {
+		log.Fatal("ADMIN_ID не задан")
+	}
+
+	parts := strings.Split(raw, ",")
+	ids := make([]int64, 0, len(parts))
+	seen := make(map[int64]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			log.Fatal("Ошибка при чтении ADMIN_ID: ", err)
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		ids = append(ids, id)
+		seen[id] = struct{}{}
+	}
+
+	if len(ids) == 0 {
+		log.Fatal("ADMIN_ID пуст")
+	}
+
+	return ids
 }
 
 func parseInt64OrZero(name string) int64 {

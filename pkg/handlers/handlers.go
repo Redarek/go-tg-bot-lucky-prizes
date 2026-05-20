@@ -26,7 +26,7 @@ type Handler struct {
 	bot                 *tgbotapi.BotAPI
 	sender              *services.Sender
 	service             *services.Service
-	adminID             int64
+	adminIDs            map[int64]struct{}
 	shopURL             string
 	subChannelID        int64
 	subChannelLink      string
@@ -38,11 +38,15 @@ type Handler struct {
 
 func NewHandler(bot *tgbotapi.BotAPI, sender *services.Sender, db *pgxpool.Pool, cfg *config.Config) *Handler {
 	repo := repositories.NewRepository(db)
+	adminIDs := make(map[int64]struct{}, len(cfg.AdminIDs))
+	for _, id := range cfg.AdminIDs {
+		adminIDs[id] = struct{}{}
+	}
 	return &Handler{
 		bot:                 bot,
 		sender:              sender,
 		service:             services.NewService(repo),
-		adminID:             cfg.AdminID,
+		adminIDs:            adminIDs,
 		shopURL:             cfg.ShopURL,
 		subChannelID:        cfg.SubChannelID,
 		subChannelLink:      cfg.SubChannelLink,
@@ -51,6 +55,11 @@ func NewHandler(bot *tgbotapi.BotAPI, sender *services.Sender, db *pgxpool.Pool,
 		contestChannel2ID:   cfg.ContestChannel2ID,
 		contestChannel2Link: cfg.ContestChannel2Link,
 	}
+}
+
+func (h *Handler) isAdmin(userID int64) bool {
+	_, ok := h.adminIDs[userID]
+	return ok
 }
 
 func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
@@ -64,13 +73,13 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 		h.trackUserInteraction(ctx, m.From, m.Chat.IsPrivate())
 
 		// Сначала админские команды
-		if m.IsCommand() && m.From != nil && m.From.ID == h.adminID {
+		if m.IsCommand() && m.From != nil && h.isAdmin(m.From.ID) {
 			h.handleAdminCommand(ctx, m)
 			return
 		}
 
 		// Пользовательские команды
-		if m.IsCommand() && m.From != nil && m.From.ID != h.adminID {
+		if m.IsCommand() && m.From != nil && !h.isAdmin(m.From.ID) {
 			switch m.Command() {
 			case "draw":
 				h.processDraw(ctx, m.Chat.ID, m.From.ID)
@@ -85,7 +94,7 @@ func (h *Handler) HandleUpdate(upd tgbotapi.Update) {
 		}
 
 		// Диалог админа — только для админа (чтобы не бить БД по каждому юзеру)
-		if m.From != nil && m.From.ID == h.adminID {
+		if m.From != nil && h.isAdmin(m.From.ID) {
 			h.handleAdminDialog(ctx, m)
 		}
 
@@ -172,7 +181,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 		h.processContestJoin(ctx, q.Message.Chat.ID, q.From)
 
 	case q.Data == "contest_close_confirm":
-		if q.From.ID != h.adminID {
+		if !h.isAdmin(q.From.ID) {
 			return
 		}
 		dbctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
@@ -189,7 +198,7 @@ func (h *Handler) handleCallback(ctx context.Context, q *tgbotapi.CallbackQuery)
 		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "✅ Розыгрыш закрыт вручную. Список участников сохранён в базе."))
 
 	case q.Data == "contest_close_cancel":
-		if q.From.ID != h.adminID {
+		if !h.isAdmin(q.From.ID) {
 			return
 		}
 		_, _ = h.sender.Send(ctx, tgbotapi.NewMessage(q.Message.Chat.ID, "Ок, закрытие розыгрыша отменено."))
@@ -716,7 +725,7 @@ func (h *Handler) processDraw(ctx context.Context, chatID, userID int64) {
 	// Клейм + выбор пакета
 	dbctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
-	p, err := h.service.ClaimStickerPack(dbctx, userID, h.adminID)
+	p, err := h.service.ClaimStickerPack(dbctx, userID, h.isAdmin(userID))
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrNoAttempts):

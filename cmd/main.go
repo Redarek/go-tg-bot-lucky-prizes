@@ -37,20 +37,22 @@ func main() {
 	pub.Scope = &publicScope
 	_, _ = bot.Request(pub)
 
-	admin := tgbotapi.NewSetMyCommands(
-		tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
-		tgbotapi.BotCommand{Command: "packs", Description: "Список стикерпаков"},
-		tgbotapi.BotCommand{Command: "addpack", Description: "Добавить стикерпак"},
-		tgbotapi.BotCommand{Command: "addattempt", Description: "Добавить попытку всем"},
-		tgbotapi.BotCommand{Command: "contestadd", Description: "Создать розыгрыш (draft)"},
-		tgbotapi.BotCommand{Command: "conteststart", Description: "Активировать розыгрыш по ID"},
-		tgbotapi.BotCommand{Command: "contestclose", Description: "Закрыть активный розыгрыш"},
-		tgbotapi.BotCommand{Command: "contestpickwinner", Description: "Выбрать победителя"},
-		tgbotapi.BotCommand{Command: "contestparticipants", Description: "Выгрузить участников XLSX"},
-	)
-	adminScope := tgbotapi.NewBotCommandScopeChat(cfg.AdminID)
-	admin.Scope = &adminScope
-	_, _ = bot.Request(admin)
+	for _, adminID := range cfg.AdminIDs {
+		admin := tgbotapi.NewSetMyCommands(
+			tgbotapi.BotCommand{Command: "start", Description: "Начать работу"},
+			tgbotapi.BotCommand{Command: "packs", Description: "Список стикерпаков"},
+			tgbotapi.BotCommand{Command: "addpack", Description: "Добавить стикерпак"},
+			tgbotapi.BotCommand{Command: "addattempt", Description: "Добавить попытку всем"},
+			tgbotapi.BotCommand{Command: "contestadd", Description: "Создать розыгрыш (draft)"},
+			tgbotapi.BotCommand{Command: "conteststart", Description: "Активировать розыгрыш по ID"},
+			tgbotapi.BotCommand{Command: "contestclose", Description: "Закрыть активный розыгрыш"},
+			tgbotapi.BotCommand{Command: "contestpickwinner", Description: "Выбрать победителя"},
+			tgbotapi.BotCommand{Command: "contestparticipants", Description: "Выгрузить участников XLSX"},
+		)
+		adminScope := tgbotapi.NewBotCommandScopeChat(adminID)
+		admin.Scope = &adminScope
+		_, _ = bot.Request(admin)
+	}
 
 	pool := db.Connect(cfg)
 	defer pool.Close()

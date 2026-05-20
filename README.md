@@ -112,7 +112,7 @@ Set via `.env` (see deploy section for auto-provision). Required keys:
 | Variable            | Description                                             |
 | ------------------- | ------------------------------------------------------- |
 | `TELEGRAM_APITOKEN` | Telegram bot token                                      |
-| `ADMIN_ID`          | Telegram user ID of the admin (int64)                   |
+| `ADMIN_ID`          | CSV list of Telegram admin user IDs (int64), e.g. `111,222` |
 | `SHOP_URL`          | URL for CTA button after claim (any link)               |
 | `SUB_CHANNEL_ID`    | Optional: channel ID for subscription check (`-100...`) |
 | `SUB_CHANNEL_LINK`  | Public link to the channel (used in prompt)             |
